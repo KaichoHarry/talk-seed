@@ -1,0 +1,121 @@
+# =========================
+
+# Python
+
+# =========================
+
+**pycache**/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+
+venv/
+.venv/
+env/
+ENV/
+
+# Build
+
+build/
+dist/
+*.egg-info/
+
+# Testing
+
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+
+.ipynb_checkpoints/
+
+# Environment Variables
+
+.env
+.env.*
+
+# =========================
+
+# Database
+
+# =========================
+
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+
+# Logs
+
+# =========================
+
+*.log
+
+# =========================
+
+# Flutter / Dart
+
+# =========================
+
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+build/
+
+# Flutter generated files
+
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Dart
+
+.pub/
+.pub-cache/
+
+# =========================
+
+# IDE
+
+# =========================
+
+.vscode/
+.idea/
+
+# =========================
+
+# macOS
+
+# =========================
+
+.DS_Store
+
+# =========================
+
+# Windows
+
+# =========================
+
+Thumbs.db
+desktop.ini
+
+# =========================
+
+# Secrets
+
+# =========================
+
+secrets.json
+config.local.json
+
+# =========================
+
+# Misc
+
+# =========================
+
+coverage/
