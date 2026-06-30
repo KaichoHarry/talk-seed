@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 150" role="img" aria-label="TalkSeed mascot">
+  <defs>
+    <linearGradient id="body" x1="20" x2="160" y1="10" y2="145" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EAF7FF"/>
+      <stop offset="1" stop-color="#8BC6FF"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 60c4-32 27-50 58-50s54 18 58 50l13 13c8 8 8 22 1 31l-8 11c-11 16-34 25-64 25s-53-9-64-25l-8-11c-7-9-7-23 1-31z" fill="url(#body)" stroke="#4A90E2" stroke-width="5"/>
+  <rect x="42" y="52" width="96" height="52" rx="24" fill="#fff" stroke="#4A90E2" stroke-width="4"/>
+  <circle cx="72" cy="78" r="8" fill="#2B67F6"/>
+  <circle cx="108" cy="78" r="8" fill="#2B67F6"/>
+  <path d="M78 94c8 8 16 8 24 0" fill="none" stroke="#2B67F6" stroke-linecap="round" stroke-width="5"/>
+  <path d="M88 11V0h5v11z" fill="#4A90E2"/>
+  <circle cx="90" cy="2" r="8" fill="#FFD58A"/>
+  <path d="M24 86 6 76M156 86l18-10" stroke="#4A90E2" stroke-linecap="round" stroke-width="7"/>
+</svg>
