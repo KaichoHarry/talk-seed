@@ -11,7 +11,7 @@ app = Flask(__name__, template_folder=".")
 # Gemini クライアントの初期化
 client = genai.Client(api_key="YOUR_GEMINI_API_KEY_HERE")
 
-# フォールバック用固定データベース
+# フォールバック用の固定データベース
 TOPIC_DATABASE = {
     "live": {
         "friend": ["今日一番楽しみにしている曲は何？", "物販で狙ってるグッズもう買えた？"],
