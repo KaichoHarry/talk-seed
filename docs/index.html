@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI会話支援システム</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f5f5f5; color: #333; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h1 { text-align: center; font-size: 1.5rem; color: #007bff; }
+        .card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 20px; min-height: 80px; background: #fafafa; }
+        .status-badge { display: none; color: #ff9800; font-weight: bold; margin-bottom: 10px; animation: blink 1.5s infinite; }
+        @keyframes blink { 0% {opacity: 0.5;} 50% {opacity: 1;} 100% {opacity: 0.5;} }
+        .btn { display: block; width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 5px; font-size: 1rem; cursor: pointer; margin-bottom: 10px; }
+        .btn:active { background: #0056b3; }
+        .btn:disabled { background: #9ca3af; cursor: not-allowed; }
+        .btn-secondary { background: #6c757d; }
+        .btn-secondary:active { background: #545b62; }
+        .setting-group { margin-bottom: 15px; }
+        .setting-group label { display: block; font-size: 0.9rem; margin-bottom: 5px; font-weight: bold; }
+        .setting-group input, .setting-group select { width: 100%; padding: 8px; border-radius: 5px; border: 1px solid #ccc; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>AI会話支援システム</h1>
+    
+    <div class="setting-group">
+        <label for="placeSelect">現在の場所 (place)</label>
+        <select id="placeSelect">
+            <option value="restaurant" selected>飲食店 (restaurant)</option>
+            <option value="live">ライブ会場 (live)</option>
+        </select>
+    </div>
+
+    <div class="setting-group">
+        <label for="relationSelect">相手との関係 (relationship)</label>
+        <select id="relationSelect">
+            <option value="friend" selected>友人 (friend)</option>
+            <option value="lover">恋人 (lover)</option>
+            <option value="family">家族 (family)</option>
+            <option value="first">初対面 (first)</option>
+        </select>
+    </div>
+
+    <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ddd;">
+    
+    <div class="card">
+        <div id="statusBadge" class="status-badge">🔊 AIが話題を読み上げています...</div>
+        <p id="topicText" style="font-size: 1.1rem; margin: 0; color: #666;">「話題を作る」ボタンを押してください。</p>
+    </div>
+
+    <button id="generateBtn" class="btn">話題を作る</button>
+    <button id="replayBtn" class="btn btn-secondary" style="display: none;">もう一度読む</button>
+    <button id="stopBtn" class="btn btn-secondary" style="display: none; background: #dc3545;">停止</button>
+
+    <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ddd;">
+
+    <div class="setting-group">
+        <label for="voiceSelect">音声タイプ (ブラウザ標準)</label>
+        <select id="voiceSelect"><option value="default">読み込み中...</option></select>
+    </div>
+
+    <div class="setting-group">
+        <label for="volumeRange">音量: <span id="volumeVal">1.0</span></label>
+        <input type="range" id="volumeRange" min="0.0" max="1.0" step="0.1" value="1.0">
+    </div>
+
+    <div class="setting-group">
+        <label for="rateRange">話速: <span id="rateVal">1.0</span></label>
+        <input type="range" id="rateRange" min="0.5" max="2.0" step="0.1" value="1.0">
+    </div>
+</div>
+
+<script>
+    let currentText = "";
+    let voices = [];
+    const synth = window.speechSynthesis;
+
+    // DOM要素の取得
+    const generateBtn = document.getElementById('generateBtn');
+    const replayBtn = document.getElementById('replayBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const topicText = document.getElementById('topicText');
+    const statusBadge = document.getElementById('statusBadge');
+    const voiceSelect = document.getElementById('voiceSelect');
+    const volumeRange = document.getElementById('volumeRange');
+    const rateRange = document.getElementById('rateRange');
+    
+    const placeSelect = document.getElementById('placeSelect');
+    const relationSelect = document.getElementById('relationSelect');
+
+    // ブラウザの日本語音声リストを読み込む
+    function loadVoices() {
+        voices = synth.getVoices();
+        voiceSelect.innerHTML = '';
+        
+        const jaVoices = voices.filter(v => v.lang.includes('ja'));
+        
+        if(jaVoices.length === 0) {
+            voiceSelect.innerHTML = '<option value="default">ブラウザ標準の日本語音声</option>';
+            return;
+        }
+
+        jaVoices.forEach((voice, index) => {
+            const option = document.createElement('option');
+            option.value = voice.name;
+            option.textContent = `${voice.name} (${voice.localService ? 'ローカル' : 'クラウド'})`;
+            if (voice.name.includes('Google') || voice.name.includes('Kyoko') || index === 0) {
+                option.selected = true;
+            }
+            voiceSelect.appendChild(option);
+        });
+    }
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+        speechSynthesis.onvoiceschanged = loadVoices;
+    }
+    loadVoices();
+
+    // 音声再生メイン関数（Web Speech APIを使用）
+    function playBrowserAudio(text) {
+        synth.cancel(); // 再生中の音声をクリア
+
+        if (!text) return;
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        // 選択された音声タイプを反映
+        const selectedVoiceName = voiceSelect.value;
+        const selectedVoice = voices.find(v => v.name === selectedVoiceName);
+        if (selectedVoice) utterance.voice = selectedVoice;
+
+        // 設定の反映
+        utterance.volume = parseFloat(volumeRange.value);
+        utterance.rate = parseFloat(rateRange.value);
+
+        // 再生開始時
+        utterance.onstart = () => {
+            statusBadge.style.display = 'block';
+            stopBtn.style.display = 'block';
+        };
+
+        // 再生終了時
+        utterance.onend = () => {
+            statusBadge.style.display = 'none';
+            stopBtn.style.display = 'none';
+        };
+
+        utterance.onerror = () => {
+            statusBadge.style.display = 'none';
+            stopBtn.style.display = 'none';
+        };
+
+        synth.speak(utterance);
+    }
+
+    // 音声停止
+    stopBtn.addEventListener('click', () => {
+        synth.cancel();
+        statusBadge.style.display = 'none';
+        stopBtn.style.display = 'none';
+    });
+
+    // 話題生成API呼び出し
+    generateBtn.addEventListener('click', () => {
+        synth.cancel(); 
+        generateBtn.disabled = true;
+        topicText.innerText = "AIが話題を考えています...";
+        replayBtn.style.display = 'none';
+
+        const requestData = {
+            place: placeSelect.value,
+            relationship: relationSelect.value
+        };
+
+        fetch('/api/generate_topic', { 
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                currentText = data.text; 
+                topicText.innerText = currentText;
+                replayBtn.style.display = 'block'; 
+                
+                // ブラウザの機能で再生
+                playBrowserAudio(currentText);
+            } else {
+                topicText.innerText = "話題の取得に失敗しました。";
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            topicText.innerText = "エラーが発生しました。";
+        })
+        .finally(() => {
+            generateBtn.disabled = false;
+        });
+    });
+
+    // もう一度読むボタン
+    replayBtn.addEventListener('click', () => {
+        playBrowserAudio(currentText);
+    });
+
+    volumeRange.addEventListener('input', (e) => document.getElementById('volumeVal').innerText = e.target.value);
+    rateRange.addEventListener('input', (e) => document.getElementById('rateVal').innerText = e.target.value);
+</script>
+
+</body>
+</html>
