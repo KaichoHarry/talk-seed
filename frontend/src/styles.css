@@ -438,6 +438,12 @@ button {
   transform: translateY(1px);
 }
 
+.button:disabled {
+  cursor: not-allowed;
+  opacity: .62;
+  transform: none;
+}
+
 .button.primary {
   color: #fff;
   background: linear-gradient(135deg, #2b67f6, #4a90e2 72%, #66b5ff);

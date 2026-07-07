@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Bot,
@@ -25,32 +25,17 @@ import {
 import talkseedMark from "./assets/talkseed-mark.svg";
 import friendsWaiting from "./assets/friends-waiting.svg";
 import mascot from "./assets/mascot.svg";
+import { endConversation, fetchConversationDetail, fetchConversations, requestAiResponse, startConversation } from "./api";
+import type { ConversationHistory, SceneOption } from "./types";
 
 type Screen = "home" | "scene" | "voice" | "talk" | "summary" | "history" | "detail";
 type VoiceType = "female" | "male" | "robot";
 type RecordingState = "idle" | "recording" | "paused";
 
-type SceneOption = {
-  place: string;
-  relationship: string;
-  mood: string;
-};
-
 type VoiceOption = {
   type: VoiceType;
   volume: number;
   rate: number;
-};
-
-type ConversationHistory = {
-  id: string;
-  date: string;
-  place: string;
-  relationship: string;
-  overview: string;
-  hotTopics: string[];
-  memorable: string;
-  transcript: string[];
 };
 
 type Topic = {
@@ -127,8 +112,11 @@ function App() {
   const [histories, setHistories] = useState<ConversationHistory[]>(sampleHistories);
   const [selectedHistoryId, setSelectedHistoryId] = useState(sampleHistories[0].id);
   const [toast, setToast] = useState("");
+  const [conversationId, setConversationId] = useState<number | null>(null);
+  const [serverTopic, setServerTopic] = useState<Topic | null>(null);
+  const [isApiLoading, setIsApiLoading] = useState(false);
 
-  const currentTopic = topics[topicIndex % topics.length];
+  const currentTopic = serverTopic ?? topics[topicIndex % topics.length];
   const selectedHistory = histories.find((history) => history.id === selectedHistoryId) ?? histories[0];
   const currentSummary = useMemo(
     () => ({
@@ -150,9 +138,118 @@ function App() {
     window.setTimeout(() => setVoiceStatus("音声は停止中です"), 1200);
   };
 
+  const showToast = (message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 1800);
+  };
+
+  useEffect(() => {
+    if (screen !== "history" || !setupCompleted) return;
+
+    let active = true;
+    fetchConversations()
+      .then((remoteHistories) => {
+        if (active && remoteHistories.length > 0) {
+          setHistories(remoteHistories);
+          setSelectedHistoryId(remoteHistories[0].id);
+        }
+      })
+      .catch(() => {
+        if (active) showToast("履歴APIに接続できませんでした");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [screen, setupCompleted]);
+
+  const beginConversation = async () => {
+    setIsApiLoading(true);
+    setServerTopic(null);
+
+    try {
+      const nextConversationId = await startConversation(scene);
+      setConversationId(nextConversationId);
+      showToast("APIに接続しました");
+    } catch {
+      setConversationId(null);
+      showToast("APIに接続できないためモックで開始します");
+    } finally {
+      setIsApiLoading(false);
+      setSetupCompleted(true);
+      setScreen("talk");
+    }
+  };
+
+  const askBackend = async (prompt: string, fallback: () => void) => {
+    if (!conversationId) {
+      fallback();
+      return;
+    }
+
+    setIsApiLoading(true);
+    try {
+      const response = await requestAiResponse(conversationId, prompt);
+      setServerTopic({ label: "AIの応答", text: response });
+      playVoice();
+    } catch {
+      fallback();
+      showToast("応答APIに接続できませんでした");
+    } finally {
+      setIsApiLoading(false);
+    }
+  };
+
+  const finishRecording = async () => {
+    if (conversationId) {
+      setIsApiLoading(true);
+      try {
+        await endConversation(conversationId);
+        showToast("会話終了APIに送信しました");
+      } catch {
+        showToast("会話終了APIに接続できませんでした");
+      } finally {
+        setIsApiLoading(false);
+      }
+    }
+
+    setRecording("idle");
+    setRecordingSeconds((value) => value + 24);
+    setScreen("summary");
+  };
+
+  const openHistoryDetail = async (id: string) => {
+    setSelectedHistoryId(id);
+
+    if (/^\d+$/.test(id)) {
+      setIsApiLoading(true);
+      try {
+        const detail = await fetchConversationDetail(id);
+        setHistories((current) =>
+          current.map((history) =>
+            history.id === id
+              ? {
+                  ...history,
+                  ...detail,
+                  hotTopics: detail.hotTopics?.length ? detail.hotTopics : history.hotTopics,
+                  transcript: detail.transcript?.length ? detail.transcript : history.transcript
+                }
+              : history
+          )
+        );
+      } catch {
+        showToast("履歴詳細APIに接続できませんでした");
+      } finally {
+        setIsApiLoading(false);
+      }
+    }
+
+    setScreen("detail");
+  };
+
   const saveSummary = () => {
     const nextHistory: ConversationHistory = {
-      id: `mock-${Date.now()}`,
+      id: conversationId ? String(conversationId) : `mock-${Date.now()}`,
       date: "2026/06/30 10:45",
       place: scene.place,
       relationship: scene.relationship,
@@ -164,11 +261,6 @@ function App() {
     setHistories((current) => [nextHistory, ...current]);
     setSelectedHistoryId(nextHistory.id);
     showToast("保存が完了しました");
-  };
-
-  const showToast = (message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 1800);
   };
 
   return (
@@ -190,10 +282,8 @@ function App() {
               voice={voice}
               setVoice={setVoice}
               setupCompleted={setupCompleted}
-              onSave={() => {
-                setSetupCompleted(true);
-                setScreen("talk");
-              }}
+              isSaving={isApiLoading}
+              onSave={beginConversation}
               onPreview={playVoice}
             />
           )}
@@ -204,22 +294,21 @@ function App() {
               voiceStatus={voiceStatus}
               recording={recording}
               recordingSeconds={recordingSeconds}
+              isLoading={isApiLoading}
               onRead={playVoice}
-              onDeep={() => {
+              onDeep={() => askBackend(`${currentTopic.text}\n深掘り質問を作ってください。`, () => {
+                setServerTopic(null);
                 setTopicIndex(1);
                 playVoice();
-              }}
-              onNextTopic={() => {
+              })}
+              onNextTopic={() => askBackend(currentTopic.text, () => {
+                setServerTopic(null);
                 setTopicIndex((value) => value + 1);
                 playVoice();
-              }}
+              })}
               onStartRecording={() => setRecording("recording")}
               onPause={() => setRecording(recording === "paused" ? "recording" : "paused")}
-              onEnd={() => {
-                setRecording("idle");
-                setRecordingSeconds((value) => value + 24);
-                setScreen("summary");
-              }}
+              onEnd={finishRecording}
             />
           )}
           {screen === "summary" && (
@@ -228,10 +317,7 @@ function App() {
           {screen === "history" && (
             <HistoryScreen
               histories={histories}
-              onDetail={(id) => {
-                setSelectedHistoryId(id);
-                setScreen("detail");
-              }}
+              onDetail={openHistoryDetail}
               onDelete={(id) => setHistories((current) => current.filter((history) => history.id !== id))}
             />
           )}
@@ -387,12 +473,14 @@ function VoiceScreen({
   voice,
   setVoice,
   setupCompleted,
+  isSaving,
   onSave,
   onPreview
 }: {
   voice: VoiceOption;
   setVoice: React.Dispatch<React.SetStateAction<VoiceOption>>;
   setupCompleted: boolean;
+  isSaving: boolean;
   onSave: () => void;
   onPreview: () => void;
 }) {
@@ -429,8 +517,8 @@ function VoiceScreen({
         </div>
       </section>
       <div className="screen-action">
-        <button className="button accent" type="button" onClick={onSave}>
-          {setupCompleted ? "設定を保存" : "保存して会話をはじめる"}
+        <button className="button accent" type="button" onClick={onSave} disabled={isSaving}>
+          {isSaving ? "APIに接続中..." : setupCompleted ? "設定を保存" : "保存して会話をはじめる"}
         </button>
       </div>
     </>
@@ -458,6 +546,7 @@ function TalkScreen({
   voiceStatus,
   recording,
   recordingSeconds,
+  isLoading,
   onRead,
   onDeep,
   onNextTopic,
@@ -470,6 +559,7 @@ function TalkScreen({
   voiceStatus: string;
   recording: RecordingState;
   recordingSeconds: number;
+  isLoading: boolean;
   onRead: () => void;
   onDeep: () => void;
   onNextTopic: () => void;
@@ -513,12 +603,12 @@ function TalkScreen({
           <button className="button secondary" type="button" onClick={onRead}>
             もう一度読む
           </button>
-          <button className="button secondary" type="button" onClick={onDeep}>
-            深掘り質問
+          <button className="button secondary" type="button" onClick={onDeep} disabled={isLoading}>
+            {isLoading ? "取得中" : "深掘り質問"}
           </button>
         </div>
-        <button className="button primary" type="button" onClick={onNextTopic}>
-          次の話題へ
+        <button className="button primary" type="button" onClick={onNextTopic} disabled={isLoading}>
+          {isLoading ? "AI応答を取得中..." : "次の話題へ"}
         </button>
       </div>
       <section className="record-panel">
@@ -533,8 +623,8 @@ function TalkScreen({
               {recording === "paused" ? <Play size={16} /> : <Pause size={16} />}
               {recording === "paused" ? "再開" : "一時停止"}
             </button>
-            <button className="button danger" type="button" onClick={onEnd}>
-              記録を終了する
+            <button className="button danger" type="button" onClick={onEnd} disabled={isLoading}>
+              {isLoading ? "送信中..." : "記録を終了する"}
             </button>
           </div>
         )}
