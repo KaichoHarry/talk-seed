@@ -124,20 +124,21 @@ coverage/
 
 # Frontend
 
-# 
+# =========================
 
-frontend/node_modules/
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# npmログ
-frontend/npm-debug.log*
+# Vite
+dist/
+.vite/
 
-# ビルド成果物
-frontend/dist/
-frontend/build/
+# Next.js
+.next/
 
-# 環境変数
-frontend/.env
-frontend/.env.local
-
-# Viteを使っている場合
-frontend/.vite/
+# Environment
+.env
+.env.local
