@@ -1,8 +1,14 @@
 import whisper
 
+print("Whisperモデルを読み込み中...")
+
 model = whisper.load_model("base")
 
-def transcribe_audio(filepath):
+print("読み込み完了")
+
+
+def transcribe(filepath):
+
     result = model.transcribe(
         filepath,
         language="ja"

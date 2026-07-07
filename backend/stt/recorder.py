@@ -1,24 +1,21 @@
-import sounddevice as sd
+from pathlib import Path
 from scipy.io.wavfile import write
+from config import SAMPLE_RATE
 
-SAMPLE_RATE = 16000
+# recorder.py と同じ場所を取得
+BASE_DIR = Path(__file__).resolve().parent
 
-def record_audio(duration=5):
-    print("録音開始")
+# 保存先ディレクトリ
+OUTPUT_DIR = BASE_DIR / "recordings"
+OUTPUT_DIR.mkdir(exist_ok=True)
 
-    audio = sd.rec(
-        int(duration * SAMPLE_RATE),
-        samplerate=SAMPLE_RATE,
-        channels=1,
-        dtype="int16"
-    )
+# 保存ファイル
+OUTPUT_FILE = OUTPUT_DIR / "input.wav"
 
-    sd.wait()
 
-    filename = "recordings/input.wav"
-
-    write(filename, SAMPLE_RATE, audio)
-
-    print("録音終了")
-
-    return filename
+def save_audio(audio):
+    """
+    NumPy配列をWAVファイルとして保存する
+    """
+    write(str(OUTPUT_FILE), SAMPLE_RATE, audio)
+    return str(OUTPUT_FILE)
