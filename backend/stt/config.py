@@ -8,4 +8,4 @@ OUTPUT_FILE = "recordings/input.wav"
 
 FRAME_DURATION = 30      # ms
 VAD_MODE = 2             # 0～3
-SILENCE_THRESHOLD = 17
+SILENCE_THRESHOLD = 25
