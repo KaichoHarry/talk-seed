@@ -78,10 +78,10 @@
 
 | 項目 | 内容 |
 |--------|--------|
-| 実装言語 | Python |
+| 実装言語 | Python / TypeScript |
 | バックエンド | Flask |
-| フロントエンド | HTML/CSS/JavaScript |
-| 音声合成 | Web Speech API または VOICEVOX |
+| フロントエンド | React |
+| 音声合成 | edge-tts（サーバーサイドでmp3を生成しbase64で返却） |
 | 実行環境 | スマートフォンWebブラウザ |
 | 通信方式 | HTTP/HTTPS |
 
@@ -200,3 +200,16 @@
 | change_voice | voice | None | 音声変更 |
 | set_volume | volume | None | 音量変更 |
 | set_rate | rate | None | 話速変更 |
+
+---
+
+## 11. 実装メモ（サーバー/クライアントの役割分担）
+
+実装では上記の関数群を以下のように分担している。
+
+| 関数 | 実装場所 | 実装 |
+|---|---|---|
+| generate_speech | サーバー (`backend/voice/service.py: synthesize_speech`) | edge-ttsで音声合成し、`POST /voice/speak`でbase64のmp3を返す |
+| change_voice | サーバー | `voice_type`("female"/"male"/"robot")に応じて音声・ピッチ・話速のプロファイルを切り替える |
+| play_audio / stop_audio | クライアント (`frontend/src/App.tsx: speak`) | 受け取ったbase64をdata URLにし、ブラウザの`Audio`要素で再生する |
+| set_volume / set_rate | クライアント | `Audio.volume` / `Audio.playbackRate` に音声設定画面の値を反映する |
