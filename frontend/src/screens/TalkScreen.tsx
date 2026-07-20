@@ -1,6 +1,6 @@
-import { Bot, Circle, Pause, Play, Volume2 } from "lucide-react";
+import { Bot, Circle, Mic, Pause, Play, Volume2 } from "lucide-react";
 import { Header } from "../components/Header";
-import type { RecordingState, SceneOption, Topic } from "../types";
+import type { MicState, RecordingState, SceneOption, Topic } from "../types";
 
 export function TalkScreen({
   scene,
@@ -9,6 +9,9 @@ export function TalkScreen({
   recording,
   recordingSeconds,
   isLoading,
+  micState,
+  lastUserText,
+  onToggleMic,
   onRead,
   onDeep,
   onNextTopic,
@@ -22,6 +25,9 @@ export function TalkScreen({
   recording: RecordingState;
   recordingSeconds: number;
   isLoading: boolean;
+  micState: MicState;
+  lastUserText: string;
+  onToggleMic: () => void;
   onRead: () => void;
   onDeep: () => void;
   onNextTopic: () => void;
@@ -30,6 +36,7 @@ export function TalkScreen({
   onEnd: () => void;
 }) {
   const isRecording = recording !== "idle";
+  const micLabel = micState === "recording" ? "話す内容を聞いています…" : micState === "processing" ? "AIが考えています…" : "ボタンを押して話しかける";
 
   return (
     <>
@@ -60,6 +67,18 @@ export function TalkScreen({
           <Volume2 size={18} />
           <span>{voiceStatus}</span>
         </div>
+      </section>
+      <section className="soft-card card-pad mic-panel">
+        <p className="mic-status">{micLabel}</p>
+        {lastUserText && <p className="mic-transcript">「{lastUserText}」</p>}
+        <button
+          className={`mic-button ${micState === "recording" ? "is-active" : ""}`}
+          type="button"
+          onClick={onToggleMic}
+          disabled={micState === "processing"}
+        >
+          <Mic size={26} />
+        </button>
       </section>
       <div className="screen-action stack">
         <div className="button-row">

@@ -471,6 +471,63 @@ button {
   margin-top: 14px;
 }
 
+.mic-panel {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  text-align: center;
+}
+
+.mic-status {
+  margin: 0;
+  color: #506783;
+  font-size: 13px;
+}
+
+.mic-transcript {
+  margin: 0;
+  color: var(--blue-700);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mic-button {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--blue);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.mic-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mic-button.is-active {
+  background: #dc3545;
+  transform: scale(1.08);
+  animation: mic-pulse 1.4s infinite;
+}
+
+@keyframes mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(220, 53, 69, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+  }
+}
+
 .privacy-note {
   margin: 16px 0 0;
   padding: 12px 14px;

@@ -49,7 +49,7 @@ export async function startConversation(scene: SceneOption) {
     body: JSON.stringify({
       place_type: scene.place,
       purpose_type: scene.mood,
-      participants: [{ name: scene.relationship }]
+      participants: [scene.relationship]
     })
   });
 
@@ -88,6 +88,32 @@ export async function fetchConversations(): Promise<ConversationHistory[]> {
     memorable: "詳細画面で取得します。",
     transcript: []
   }));
+}
+
+export async function transcribeAudio(blob: Blob): Promise<string> {
+  const formData = new FormData();
+  formData.append("audio", blob, "recording.webm");
+
+  const response = await fetch(`${API_BASE_URL}/voice/transcribe`, {
+    method: "POST",
+    body: formData
+  });
+
+  if (!response.ok) {
+    throw new Error(`TalkSeed API error: ${response.status}`);
+  }
+
+  const data = (await response.json()) as { text: string };
+  return data.text;
+}
+
+export async function synthesizeSpeech(text: string, voiceType: string): Promise<string> {
+  const data = await requestJson<{ audio_base64: string }>("/voice/speak", {
+    method: "POST",
+    body: JSON.stringify({ text, voice_type: voiceType })
+  });
+
+  return data.audio_base64;
 }
 
 export async function fetchConversationDetail(id: string): Promise<Partial<ConversationHistory>> {

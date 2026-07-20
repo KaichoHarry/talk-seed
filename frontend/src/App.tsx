@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
-import { endConversation, fetchConversationDetail, fetchConversations, requestAiResponse, startConversation } from "./api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  endConversation,
+  fetchConversationDetail,
+  fetchConversations,
+  requestAiResponse,
+  startConversation,
+  synthesizeSpeech,
+  transcribeAudio
+} from "./api";
 import { BottomNav } from "./components/BottomNav";
 import { initialScene, sampleHistories, topics } from "./data";
 import { HistoryDetailScreen } from "./screens/HistoryDetailScreen";
@@ -9,7 +17,7 @@ import { SceneScreen } from "./screens/SceneScreen";
 import { SummaryScreen } from "./screens/SummaryScreen";
 import { TalkScreen } from "./screens/TalkScreen";
 import { VoiceScreen } from "./screens/VoiceScreen";
-import type { ConversationHistory, RecordingState, Screen, Topic, VoiceOption } from "./types";
+import type { ConversationHistory, MicState, RecordingState, Screen, Topic, VoiceOption } from "./types";
 
 function App() {
   const [screen, setScreen] = useState<Screen>("home");
@@ -26,6 +34,10 @@ function App() {
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [serverTopic, setServerTopic] = useState<Topic | null>(null);
   const [isApiLoading, setIsApiLoading] = useState(false);
+  const [micState, setMicState] = useState<MicState>("idle");
+  const [lastUserText, setLastUserText] = useState("");
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const currentTopic = serverTopic ?? topics[topicIndex % topics.length];
   const selectedHistory = histories.find((history) => history.id === selectedHistoryId) ?? histories[0];
@@ -44,14 +56,98 @@ function App() {
     setScreen(next);
   };
 
-  const playVoice = () => {
-    setVoiceStatus("AIが読み上げています");
-    window.setTimeout(() => setVoiceStatus("音声は停止中です"), 1200);
-  };
-
   const showToast = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 1800);
+  };
+
+  const speak = async (text: string) => {
+    setVoiceStatus("音声を生成中です");
+    try {
+      const audioBase64 = await synthesizeSpeech(text, voice.type);
+      const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`);
+      audio.volume = voice.volume / 100;
+      audio.playbackRate = voice.rate / 100;
+      audio.onended = () => setVoiceStatus("音声は停止中です");
+      audio.onerror = () => setVoiceStatus("音声は停止中です");
+      setVoiceStatus("AIが読み上げています");
+      audio.play().catch(() => setVoiceStatus("音声は停止中です"));
+    } catch {
+      setVoiceStatus("音声は停止中です");
+      showToast("音声合成APIに接続できませんでした");
+    }
+  };
+
+  const playVoice = () => {
+    speak(currentTopic.text);
+  };
+
+  const sendUserSpeech = async (text: string) => {
+    setLastUserText(text);
+
+    if (!conversationId) {
+      showToast("会話が開始されていないため送信できません");
+      return;
+    }
+
+    setIsApiLoading(true);
+    try {
+      const response = await requestAiResponse(conversationId, text);
+      setServerTopic({ label: "AIの返答", text: response });
+      speak(response);
+    } catch {
+      showToast("応答APIに接続できませんでした");
+    } finally {
+      setIsApiLoading(false);
+    }
+  };
+
+  const startMicRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        setMicState("processing");
+        try {
+          const text = await transcribeAudio(blob);
+          if (!text) {
+            showToast("聞き取れませんでした。もう一度お試しください");
+          } else {
+            await sendUserSpeech(text);
+          }
+        } catch {
+          showToast("音声認識APIに接続できませんでした");
+        } finally {
+          setMicState("idle");
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setMicState("recording");
+    } catch {
+      showToast("マイクを利用できませんでした");
+    }
+  };
+
+  const stopMicRecording = () => {
+    mediaRecorderRef.current?.stop();
+  };
+
+  const toggleMicRecording = () => {
+    if (micState === "recording") {
+      stopMicRecording();
+    } else if (micState === "idle") {
+      startMicRecording();
+    }
   };
 
   useEffect(() => {
@@ -102,7 +198,7 @@ function App() {
     try {
       const response = await requestAiResponse(conversationId, prompt);
       setServerTopic({ label: "AIの応答", text: response });
-      playVoice();
+      speak(response);
     } catch {
       fallback();
       showToast("応答APIに接続できませんでした");
@@ -180,7 +276,16 @@ function App() {
         <div className="phone-scroll">
           {screen === "home" && <HomeScreen onStart={() => setScreen("scene")} />}
           {screen === "scene" && <SceneScreen scene={scene} setScene={setScene} setupCompleted={setupCompleted} onNext={() => setScreen(setupCompleted ? "talk" : "voice")} />}
-          {screen === "voice" && <VoiceScreen voice={voice} setVoice={setVoice} setupCompleted={setupCompleted} isSaving={isApiLoading} onSave={beginConversation} onPreview={playVoice} />}
+          {screen === "voice" && (
+            <VoiceScreen
+              voice={voice}
+              setVoice={setVoice}
+              setupCompleted={setupCompleted}
+              isSaving={isApiLoading}
+              onSave={beginConversation}
+              onPreview={() => speak("こんにちは、TalkSeedです。音声のプレビューです。")}
+            />
+          )}
           {screen === "talk" && (
             <TalkScreen
               scene={scene}
@@ -189,6 +294,9 @@ function App() {
               recording={recording}
               recordingSeconds={recordingSeconds}
               isLoading={isApiLoading}
+              micState={micState}
+              lastUserText={lastUserText}
+              onToggleMic={toggleMicRecording}
               onRead={playVoice}
               onDeep={() =>
                 askBackend(`${currentTopic.text}\n深掘り質問を作ってください。`, () => {

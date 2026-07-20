@@ -1,0 +1,7 @@
+Flask>=3.0
+flask-cors>=6.0
+google-genai>=2.11
+python-dotenv>=0.21
+openai-whisper>=20250625
+edge-tts>=7.2
+numpy>=1.26

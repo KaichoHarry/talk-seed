@@ -1,6 +1,7 @@
 export type Screen = "home" | "scene" | "voice" | "talk" | "summary" | "history" | "detail";
 export type VoiceType = "female" | "male" | "robot";
 export type RecordingState = "idle" | "recording" | "paused";
+export type MicState = "idle" | "recording" | "processing";
 
 export type SceneOption = {
   place: string;
