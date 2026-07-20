@@ -1,6 +1,9 @@
 import type { ConversationHistory, SceneOption } from "./types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:5000";
+// VITE_API_BASE_URLが未設定の場合は、今アクセスしているホスト名・プロトコルに対して
+// ポート5050で接続する。これにより、PCのlocalhostからでもスマホがLAN経由で
+// PCのIPにアクセスした場合(http/https どちらでも)でも同じビルドで正しいバックエンドに繋がる。
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? `${window.location.protocol}//${window.location.hostname}:5050`;
 
 type BackendConversation = {
   conversation_id: number;
@@ -14,6 +17,15 @@ type BackendDetail = {
   hot_topics?: string;
   memorable_points?: string;
   participants?: string[];
+  transcript?: string[];
+};
+
+type BackendSummary = {
+  summary_created: boolean;
+  memory_updated: boolean;
+  overview?: string;
+  hot_topics?: string;
+  memorable_points?: string;
 };
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -80,10 +92,18 @@ export async function requestAiResponse(conversationId: number, currentText: str
 }
 
 export async function endConversation(conversationId: number) {
-  return requestJson<{ summary_created: boolean; memory_updated: boolean }>("/conversation/end", {
+  const data = await requestJson<BackendSummary>("/conversation/end", {
     method: "POST",
     body: JSON.stringify({ conversation_id: conversationId })
   });
+
+  return {
+    summaryCreated: data.summary_created,
+    memoryUpdated: data.memory_updated,
+    overview: data.overview ?? "",
+    hotTopics: normalizeTopics(data.hot_topics),
+    memorable: data.memorable_points ?? ""
+  };
 }
 
 export async function fetchConversations(): Promise<ConversationHistory[]> {
@@ -135,7 +155,7 @@ export async function fetchConversationDetail(id: string): Promise<Partial<Conve
     overview: detail.overview ?? "会話の概要はまだありません。",
     hotTopics: normalizeTopics(detail.hot_topics),
     memorable: detail.memorable_points ?? "印象に残った内容はまだありません。",
-    transcript: [],
+    transcript: detail.transcript ?? [],
     participants: detail.participants ?? []
   };
 }

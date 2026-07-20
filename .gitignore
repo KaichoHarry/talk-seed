@@ -36,6 +36,9 @@ htmlcov/
 .env
 .env.*
 
+# Local HTTPS certificates (mkcert)
+certs/
+
 # =========================
 
 # Database

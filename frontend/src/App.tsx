@@ -18,7 +18,7 @@ import { SceneScreen } from "./screens/SceneScreen";
 import { SummaryScreen } from "./screens/SummaryScreen";
 import { TalkScreen } from "./screens/TalkScreen";
 import { VoiceScreen } from "./screens/VoiceScreen";
-import type { ConversationHistory, MicState, RecordingState, Screen, Topic, VoiceOption } from "./types";
+import type { ConversationHistory, ConversationSummary, MicState, RecordingState, Screen, Topic, VoiceOption } from "./types";
 
 function App() {
   const [screen, setScreen] = useState<Screen>("home");
@@ -38,6 +38,7 @@ function App() {
   const [isApiLoading, setIsApiLoading] = useState(false);
   const [micState, setMicState] = useState<MicState>("idle");
   const [lastUserText, setLastUserText] = useState("");
+  const [realSummary, setRealSummary] = useState<ConversationSummary | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -52,6 +53,7 @@ function App() {
     }),
     [currentTopic.text, scene.place]
   );
+  const summaryToShow = realSummary ?? currentSummary;
 
   const navigate = (next: Screen) => {
     if (!setupCompleted && next !== "home" && next !== "scene" && next !== "voice") return;
@@ -175,6 +177,7 @@ function App() {
   const beginConversation = async () => {
     setIsApiLoading(true);
     setServerTopic(null);
+    setRealSummary(null);
 
     const cleanedParticipants = participants.map((name) => name.trim()).filter(Boolean);
 
@@ -215,13 +218,22 @@ function App() {
     if (conversationId) {
       setIsApiLoading(true);
       try {
-        await endConversation(conversationId);
-        showToast("会話終了APIに送信しました");
+        const result = await endConversation(conversationId);
+        setRealSummary({
+          overview: result.overview || "会話の要約を生成できませんでした。",
+          hotTopics: result.hotTopics,
+          memorable: result.memorable,
+          transcript: []
+        });
+        showToast(result.memoryUpdated ? "会話を要約し、記憶を更新しました" : "会話を要約しました");
       } catch {
+        setRealSummary(null);
         showToast("会話終了APIに接続できませんでした");
       } finally {
         setIsApiLoading(false);
       }
+    } else {
+      setRealSummary(null);
     }
 
     setRecording("idle");
@@ -280,10 +292,10 @@ function App() {
       date: "2026/06/30 10:45",
       place: scene.place,
       relationship: scene.relationship,
-      overview: currentSummary.overview,
-      hotTopics: currentSummary.hotTopics,
-      memorable: currentSummary.memorable,
-      transcript: currentSummary.transcript,
+      overview: summaryToShow.overview,
+      hotTopics: summaryToShow.hotTopics,
+      memorable: summaryToShow.memorable,
+      transcript: summaryToShow.transcript,
       participants: participants.map((name) => name.trim()).filter(Boolean)
     };
     setHistories((current) => [nextHistory, ...current]);
@@ -347,7 +359,7 @@ function App() {
               onEnd={finishRecording}
             />
           )}
-          {screen === "summary" && <SummaryScreen summary={currentSummary} onSave={saveSummary} onHistory={() => setScreen("history")} onTalk={() => setScreen("talk")} />}
+          {screen === "summary" && <SummaryScreen summary={summaryToShow} onSave={saveSummary} onHistory={() => setScreen("history")} onTalk={() => setScreen("talk")} />}
           {screen === "history" && <HistoryScreen histories={histories} onDetail={openHistoryDetail} onDelete={(id) => setHistories((current) => current.filter((history) => history.id !== id))} />}
           {screen === "detail" && selectedHistory && (
             <HistoryDetailScreen

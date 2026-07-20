@@ -47,3 +47,13 @@ CREATE TABLE IF NOT EXISTS CONVERSATION_SUMMARY (
     memorable_points TEXT,
     FOREIGN KEY (conversation_id) REFERENCES CONVERSATION(conversation_id) ON DELETE CASCADE
 );
+
+-- CONVERSATION_MESSAGE (発話ログ: 要約生成のために発話を逐次記録する)
+CREATE TABLE IF NOT EXISTS CONVERSATION_MESSAGE (
+    message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    role TEXT NOT NULL, -- 'user' or 'ai'
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT (DATETIME('now', 'localtime')),
+    FOREIGN KEY (conversation_id) REFERENCES CONVERSATION(conversation_id) ON DELETE CASCADE
+);

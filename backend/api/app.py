@@ -6,7 +6,7 @@ import os
 import tempfile
 
 # backend/api/app.py (インポート部分に追加)
-from backend.llm.ai_sys import generate_ai_response  # 👈 これを追加
+from backend.llm.ai_sys import generate_ai_response, generate_conversation_summary, save_conversation_message, get_conversation_messages
 from backend.voice.service import transcribe_audio_file, synthesize_speech
 
 app = Flask(__name__)
@@ -88,7 +88,11 @@ def generate_response():
 
     # モックではなく、実際にDBから記憶を引いてLLMを叩く！
     response_text = generate_ai_response(conversation_id, current_text)
-    
+
+    # 要約生成のため、発話ログを保存しておく
+    save_conversation_message(conversation_id, 'user', current_text)
+    save_conversation_message(conversation_id, 'ai', response_text)
+
     return jsonify({
         "response": response_text
     }), 200
@@ -103,12 +107,24 @@ def end_conversation():
 
     print(f"[End] Conversation ID: {conversation_id}")
 
-    # TODO: 会話の要約、人物記憶の更新ロジックをここに挟む
-
-    return jsonify({
-        "summary_created": True,
-        "memory_updated": True
-    }), 200
+    try:
+        summary = generate_conversation_summary(conversation_id)
+        return jsonify({
+            "summary_created": True,
+            "memory_updated": summary["memory_updated"],
+            "overview": summary["overview"],
+            "hot_topics": summary["hot_topics"],
+            "memorable_points": summary["memorable_points"]
+        }), 200
+    except Exception as e:
+        print(f"Error generating summary: {e}")
+        return jsonify({
+            "summary_created": False,
+            "memory_updated": False,
+            "overview": "",
+            "hot_topics": "",
+            "memorable_points": ""
+        }), 200
 
 # --------------------------------------------------
 # 8.4 履歴一覧取得API
@@ -180,6 +196,10 @@ def get_conversation_detail(conversation_id):
             detail = {"overview": "", "hot_topics": "", "memorable_points": ""}
 
         detail["participants"] = participants
+        detail["transcript"] = [
+            f"{'あなた' if m['role'] == 'user' else 'AI'}：{m['content']}"
+            for m in get_conversation_messages(conversation_id)
+        ]
     except Exception as e:
         print(f"DB Error: {e}")
         # フォールバックモック
@@ -187,7 +207,8 @@ def get_conversation_detail(conversation_id):
             "overview": "旅行と就活の話題（モック）",
             "hot_topics": "京都旅行、インターン選考（モック）",
             "memorable_points": "山田さんが京都の温泉をおすすめしていました。（モック）",
-            "participants": []
+            "participants": [],
+            "transcript": []
         }
 
     return jsonify(detail), 200
@@ -276,5 +297,18 @@ def voice_speak():
 
 
 if __name__ == '__main__':
-    # 開発サーバーをポート5000で起動
-    app.run(debug=True, port=5000)
+    # 開発サーバーをポート5050で起動（同一LAN内の他端末からアクセスできるよう0.0.0.0で待ち受ける）
+    # 注: macOSのAirPlay受信機能がポート5000を使うことがあるため、衝突を避けて5050を使用している
+
+    # certs/にmkcertで発行した証明書があればHTTPSで起動する。
+    # スマホのブラウザはhttps(またはlocalhost)でないとマイク(getUserMedia)を許可しないため。
+    project_root = os.path.dirname(BASE_DIR)
+    cert_path = os.path.join(project_root, 'certs', 'dev-cert.pem')
+    key_path = os.path.join(project_root, 'certs', 'dev-key.pem')
+
+    if os.path.exists(cert_path) and os.path.exists(key_path):
+        print(f"HTTPSで起動します (証明書: {cert_path})")
+        app.run(debug=True, host='0.0.0.0', port=5050, ssl_context=(cert_path, key_path))
+    else:
+        print("certs/に証明書が見つからないためHTTPで起動します（README参照）")
+        app.run(debug=True, host='0.0.0.0', port=5050)
