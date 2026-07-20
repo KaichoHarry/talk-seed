@@ -24,6 +24,7 @@ export type ConversationHistory = {
   hotTopics: string[];
   memorable: string;
   transcript: string[];
+  participants: string[];
 };
 
 export type ConversationSummary = Pick<ConversationHistory, "overview" | "hotTopics" | "memorable" | "transcript">;

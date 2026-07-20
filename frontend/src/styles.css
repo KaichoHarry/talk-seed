@@ -180,6 +180,47 @@ button {
   line-height: 1.7;
 }
 
+.page-intro-note {
+  margin: -4px 4px 12px;
+  color: #506783;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.participant-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.participant-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.participant-input {
+  padding: 12px 14px;
+  border: 1px solid #dbeeff;
+  border-radius: 16px;
+  background: #fff;
+  font-size: 14px;
+  color: #1c2b45;
+}
+
+.participant-input:focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.participant-add {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .soft-card {
   position: relative;
   border: 1px solid var(--line);
@@ -614,6 +655,13 @@ button {
   color: #344965;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.history-participants {
+  margin: -8px 0 12px !important;
+  color: var(--blue-700) !important;
+  font-size: 12px !important;
+  font-weight: 600;
 }
 
 .history-actions {

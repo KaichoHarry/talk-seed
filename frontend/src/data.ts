@@ -22,7 +22,8 @@ export const sampleHistories: ConversationHistory[] = [
     overview: "ライブの感想や好きなアーティストの話題で盛り上がりました。",
     hotTopics: ["好きなアーティスト", "ライブの思い出", "音楽の好み"],
     memorable: "次はフェスにも行きたい、という話が出ました。",
-    transcript: ["AI：今日は来てよかったですか？", "A：本当に楽しかったです。", "B：次のライブも行きたいね。"]
+    transcript: ["AI：今日は来てよかったですか？", "A：本当に楽しかったです。", "B：次のライブも行きたいね。"],
+    participants: ["さくら", "ゆい"]
   },
   {
     id: "food-20260618",
@@ -32,7 +33,8 @@ export const sampleHistories: ConversationHistory[] = [
     overview: "おすすめの料理や最近行ったお店の話で楽しく会話しました。",
     hotTopics: ["好きな料理", "また行きたい店", "家で作りたいもの"],
     memorable: "次はデザートが評判のお店に行きたいという話になりました。",
-    transcript: ["AI：今日いちばん気になるメニューはありますか？", "A：限定メニューが気になる。", "B：みんなで分けて食べよう。"]
+    transcript: ["AI：今日いちばん気になるメニューはありますか？", "A：限定メニューが気になる。", "B：みんなで分けて食べよう。"],
+    participants: ["お母さん", "弟"]
   },
   {
     id: "park-20260610",
@@ -42,6 +44,9 @@ export const sampleHistories: ConversationHistory[] = [
     overview: "アトラクションの待ち時間に、次に回りたい場所の話で盛り上がりました。",
     hotTopics: ["乗りたいアトラクション", "写真を撮りたい場所", "帰りに食べたいもの"],
     memorable: "待ち時間のあいだに次の回り方が決まりました。",
-    transcript: ["AI：次に乗りたいものはありますか？", "A：水のアトラクション。", "B：そのあと写真も撮りたい。"]
+    transcript: ["AI：次に乗りたいものはありますか？", "A：水のアトラクション。", "B：そのあと写真も撮りたい。"],
+    participants: ["みなみ"]
   }
 ];
+
+export const initialParticipants: string[] = [""];

@@ -6,10 +6,11 @@ import {
   requestAiResponse,
   startConversation,
   synthesizeSpeech,
-  transcribeAudio
+  transcribeAudio,
+  updateConversationParticipants
 } from "./api";
 import { BottomNav } from "./components/BottomNav";
-import { initialScene, sampleHistories, topics } from "./data";
+import { initialParticipants, initialScene, sampleHistories, topics } from "./data";
 import { HistoryDetailScreen } from "./screens/HistoryDetailScreen";
 import { HistoryScreen } from "./screens/HistoryScreen";
 import { HomeScreen } from "./screens/HomeScreen";
@@ -23,6 +24,7 @@ function App() {
   const [screen, setScreen] = useState<Screen>("home");
   const [setupCompleted, setSetupCompleted] = useState(false);
   const [scene, setScene] = useState(initialScene);
+  const [participants, setParticipants] = useState<string[]>(initialParticipants);
   const [voice, setVoice] = useState<VoiceOption>({ type: "female", volume: 80, rate: 100 });
   const [topicIndex, setTopicIndex] = useState(0);
   const [voiceStatus, setVoiceStatus] = useState("音声は停止中です");
@@ -174,8 +176,10 @@ function App() {
     setIsApiLoading(true);
     setServerTopic(null);
 
+    const cleanedParticipants = participants.map((name) => name.trim()).filter(Boolean);
+
     try {
-      const nextConversationId = await startConversation(scene);
+      const nextConversationId = await startConversation(scene, cleanedParticipants);
       setConversationId(nextConversationId);
       showToast("APIに接続しました");
     } catch {
@@ -254,6 +258,22 @@ function App() {
     setScreen("detail");
   };
 
+  const saveParticipants = async (id: string, names: string[]) => {
+    const cleaned = names.map((name) => name.trim()).filter(Boolean);
+
+    if (/^\d+$/.test(id)) {
+      try {
+        await updateConversationParticipants(id, cleaned);
+      } catch {
+        showToast("参加者の保存に失敗しました");
+        return;
+      }
+    }
+
+    setHistories((current) => current.map((history) => (history.id === id ? { ...history, participants: cleaned } : history)));
+    showToast("参加者を保存しました");
+  };
+
   const saveSummary = () => {
     const nextHistory: ConversationHistory = {
       id: conversationId ? String(conversationId) : `mock-${Date.now()}`,
@@ -263,7 +283,8 @@ function App() {
       overview: currentSummary.overview,
       hotTopics: currentSummary.hotTopics,
       memorable: currentSummary.memorable,
-      transcript: currentSummary.transcript
+      transcript: currentSummary.transcript,
+      participants: participants.map((name) => name.trim()).filter(Boolean)
     };
     setHistories((current) => [nextHistory, ...current]);
     setSelectedHistoryId(nextHistory.id);
@@ -275,7 +296,16 @@ function App() {
       <section className={`phone-shell ${screen === "home" ? "home-shell" : ""}`}>
         <div className="phone-scroll">
           {screen === "home" && <HomeScreen onStart={() => setScreen("scene")} />}
-          {screen === "scene" && <SceneScreen scene={scene} setScene={setScene} setupCompleted={setupCompleted} onNext={() => setScreen(setupCompleted ? "talk" : "voice")} />}
+          {screen === "scene" && (
+            <SceneScreen
+              scene={scene}
+              setScene={setScene}
+              participants={participants}
+              setParticipants={setParticipants}
+              setupCompleted={setupCompleted}
+              onNext={() => setScreen(setupCompleted ? "talk" : "voice")}
+            />
+          )}
           {screen === "voice" && (
             <VoiceScreen
               voice={voice}
@@ -327,6 +357,7 @@ function App() {
                 setHistories((current) => current.filter((history) => history.id !== selectedHistory.id));
                 setScreen("history");
               }}
+              onSaveParticipants={(names) => saveParticipants(selectedHistory.id, names)}
             />
           )}
         </div>

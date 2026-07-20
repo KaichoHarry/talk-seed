@@ -6,12 +6,14 @@ type BackendConversation = {
   conversation_id: number;
   date?: string;
   overview?: string;
+  participants?: string[];
 };
 
 type BackendDetail = {
   overview?: string;
   hot_topics?: string;
   memorable_points?: string;
+  participants?: string[];
 };
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -43,17 +45,26 @@ function normalizeDate(value?: string) {
   return value.replace(/-/g, "/");
 }
 
-export async function startConversation(scene: SceneOption) {
+export async function startConversation(scene: SceneOption, participants: string[]) {
   const data = await requestJson<{ conversation_id: number }>("/conversation/start", {
     method: "POST",
     body: JSON.stringify({
       place_type: scene.place,
       purpose_type: scene.mood,
-      participants: [scene.relationship]
+      participants
     })
   });
 
   return data.conversation_id;
+}
+
+export async function updateConversationParticipants(id: string, participants: string[]): Promise<string[]> {
+  const data = await requestJson<{ participants: string[] }>(`/conversations/${encodeURIComponent(id)}/participants`, {
+    method: "PUT",
+    body: JSON.stringify({ participants })
+  });
+
+  return data.participants;
 }
 
 export async function requestAiResponse(conversationId: number, currentText: string) {
@@ -86,7 +97,8 @@ export async function fetchConversations(): Promise<ConversationHistory[]> {
     overview: row.overview ?? "会話の概要はまだありません。",
     hotTopics: [],
     memorable: "詳細画面で取得します。",
-    transcript: []
+    transcript: [],
+    participants: row.participants ?? []
   }));
 }
 
@@ -123,6 +135,7 @@ export async function fetchConversationDetail(id: string): Promise<Partial<Conve
     overview: detail.overview ?? "会話の概要はまだありません。",
     hotTopics: normalizeTopics(detail.hot_topics),
     memorable: detail.memorable_points ?? "印象に残った内容はまだありません。",
-    transcript: []
+    transcript: [],
+    participants: detail.participants ?? []
   };
 }

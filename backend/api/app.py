@@ -120,17 +120,24 @@ def get_conversations_list():
     # 💡 せっかくなので、ここはさっき作ったSQLiteのテストデータから取ってきてみましょう！
     try:
         conn = get_db_connection()
+        cursor = conn.cursor()
         # CONVERSATIONとSUMMARYを結合して簡易的に取得
         query = """
-            SELECT c.conversation_id, strftime('%Y-%m-%d', c.started_at) as date, s.overview 
+            SELECT c.conversation_id, strftime('%Y-%m-%d', c.started_at) as date, s.overview
             FROM CONVERSATION c
             LEFT JOIN CONVERSATION_SUMMARY s ON c.conversation_id = s.conversation_id
+            ORDER BY c.conversation_id DESC
         """
-        rows = conn.execute(query).fetchall()
-        conn.close()
+        rows = cursor.execute(query).fetchall()
 
-        # SQLiteのRowオブジェクトをシリアライズ可能な辞書リストに変換
-        conversations = [dict(row) for row in rows]
+        # SQLiteのRowオブジェクトをシリアライズ可能な辞書リストに変換し、参加者名も付与
+        conversations = []
+        for row in rows:
+            conversation = dict(row)
+            conversation["participants"] = get_participant_names(cursor, conversation["conversation_id"])
+            conversations.append(conversation)
+
+        conn.close()
     except Exception as e:
         print(f"DB Error: {e}")
         # DBエラー時のフォールバック（設計書のモックデータ）
@@ -142,6 +149,16 @@ def get_conversations_list():
 
     return jsonify(conversations), 200
 
+def get_participant_names(cursor, conversation_id):
+    cursor.execute("""
+        SELECT p.name
+        FROM CONVERSATION_PARTICIPANT cp
+        JOIN PERSON p ON cp.person_id = p.person_id
+        WHERE cp.conversation_id = ?
+        ORDER BY cp.participant_id
+    """, (conversation_id,))
+    return [row['name'] for row in cursor.fetchall()]
+
 # --------------------------------------------------
 # 8.5 履歴詳細取得API
 # --------------------------------------------------
@@ -149,26 +166,68 @@ def get_conversations_list():
 def get_conversation_detail(conversation_id):
     print(f"[Get Detail] Fetching ID: {conversation_id}")
 
-    # 💡 ここもSQLiteからデータを引っ張ってきてみます
     try:
         conn = get_db_connection()
+        cursor = conn.cursor()
         query = "SELECT overview, hot_topics, memorable_points FROM CONVERSATION_SUMMARY WHERE conversation_id = ?"
-        row = conn.execute(query, (1,)).fetchone()  # サンプルデータがID=1なので一旦1で固定、本来は引数のconversation_id
+        row = cursor.execute(query, (conversation_id,)).fetchone()
+        participants = get_participant_names(cursor, conversation_id)
         conn.close()
 
         if row:
             detail = dict(row)
         else:
-            raise Exception("No data found")
+            detail = {"overview": "", "hot_topics": "", "memorable_points": ""}
+
+        detail["participants"] = participants
     except Exception as e:
+        print(f"DB Error: {e}")
         # フォールバックモック
         detail = {
             "overview": "旅行と就活の話題（モック）",
             "hot_topics": "京都旅行、インターン選考（モック）",
-            "memorable_points": "山田さんが京都の温泉をおすすめしていました。（モック）"
+            "memorable_points": "山田さんが京都の温泉をおすすめしていました。（モック）",
+            "participants": []
         }
 
     return jsonify(detail), 200
+
+# --------------------------------------------------
+# 8.6 参加者名の編集API（後から名前を記録・修正する）
+# --------------------------------------------------
+@app.route('/conversations/<int:conversation_id>/participants', methods=['PUT'])
+def update_conversation_participants(conversation_id):
+    data = request.json or {}
+    names = [n.strip() for n in data.get('participants', []) if n and n.strip()]
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM CONVERSATION_PARTICIPANT WHERE conversation_id = ?", (conversation_id,))
+
+        for name in names:
+            cursor.execute("SELECT person_id FROM PERSON WHERE name = ?", (name,))
+            row = cursor.fetchone()
+
+            if row:
+                person_id = row['person_id']
+            else:
+                cursor.execute("INSERT INTO PERSON (name) VALUES (?)", (name,))
+                person_id = cursor.lastrowid
+
+            cursor.execute(
+                "INSERT INTO CONVERSATION_PARTICIPANT (conversation_id, person_id) VALUES (?, ?)",
+                (conversation_id, person_id)
+            )
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({"participants": names}), 200
+    except Exception as e:
+        print(f"Error updating participants: {e}")
+        return jsonify({"error": "Failed to update participants"}), 500
 
 
 # --------------------------------------------------

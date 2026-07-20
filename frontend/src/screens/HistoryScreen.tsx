@@ -20,6 +20,7 @@ export function HistoryScreen({ histories, onDetail, onDelete }: { histories: Co
                 {history.place}
               </h3>
               <p>{history.overview}</p>
+              {history.participants.length > 0 && <p className="history-participants">{history.participants.join("、")}</p>}
               <div className="history-actions">
                 <button className="mini-button" type="button" onClick={() => onDetail(history.id)}>
                   詳細を見る
