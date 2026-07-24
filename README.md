@@ -139,20 +139,30 @@ mkcert -CAROOT
 
 ## ログインを許可するユーザーの登録
 
-アカウント作成機能は無く、事前に `APP_USER` テーブルへ登録されたメールアドレスでのみログインできます。個人のメールアドレスをGitに残さないため、`backend/database/sample_data.sql`（Git管理対象）には書かず、`backend/database/local_users.sql`（Git管理外、`.gitignore`済み）に書いてください。
+アカウント作成機能は無く、事前に `APP_USER` テーブルへ登録されたメールアドレスでのみログインできます。個人のメールアドレスは**Gitで管理しているファイルには絶対に書かない**でください。
+
+### 方法1: コマンドで直接追加する（推奨）
+
+DBに直接INSERTするだけなので、既存の会話履歴を消さずに済み、Gitにも一切残りません。ローカルでも本番サーバー上でも同じ方法が使えます。
+
+```bash
+python3 backend/database/add_user.py member@example.com "メンバーの名前"
+```
+
+### 方法2: ローカル用ファイルにまとめて書いておく
+
+DBリセット時にまとめて登録したい場合は、`backend/database/local_users.sql`（Git管理外、`.gitignore`済み）に書いてください。
 
 ```sql
--- backend/database/local_users.sql （このファイルは自分で作成する）
+-- backend/database/local_users.sql （このファイルは自分で作成する。sample_data.sqlには書かないこと）
 INSERT INTO APP_USER (email, name) VALUES ('you@example.com', 'あなたの名前');
 ```
 
-作成したら以下を実行するとDBに反映されます（`local_users.sql`があれば自動で読み込まれます）。
+作成後、以下を実行するとDBに反映されます（`local_users.sql`があれば自動で読み込まれます。ただしDBが初期化され既存の会話履歴も消えるので注意）。
 
 ```bash
 python3 backend/database/init_db.py
 ```
-
-（これはDBを初期化するため、既存の会話履歴も消えます。既存データを消さずに追加したい場合は、直接sqlite3で `INSERT INTO APP_USER (email, name) VALUES ('xxx@example.com', '名前');` を実行してください。）
 
 ---
 
