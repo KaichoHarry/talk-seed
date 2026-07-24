@@ -7,6 +7,7 @@ BASE_DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(BASE_DIR, 'talkseed.db')
 SCHEMA_PATH = os.path.join(BASE_DIR, 'schema.sql')
 DATA_PATH = os.path.join(BASE_DIR, 'sample_data.sql')
+LOCAL_USERS_PATH = os.path.join(BASE_DIR, 'local_users.sql')  # Git管理外
 
 def init_db():
     # 既存のDBファイルがあれば一旦削除（クリーンな状態から始めるため）
@@ -27,6 +28,14 @@ def init_db():
     print("Inserting sample data...")
     with open(DATA_PATH, 'r', encoding='utf-8') as f:
         cursor.executescript(f.read())
+
+    # 3. ログイン許可ユーザーのインサート（Git管理外のローカルファイル。無ければスキップ）
+    if os.path.exists(LOCAL_USERS_PATH):
+        print("Inserting local users (login-allowed emails)...")
+        with open(LOCAL_USERS_PATH, 'r', encoding='utf-8') as f:
+            cursor.executescript(f.read())
+    else:
+        print(f"NOTE: {LOCAL_USERS_PATH} が無いため、ログイン許可ユーザーは登録されていません。")
 
     conn.commit()
     conn.close()

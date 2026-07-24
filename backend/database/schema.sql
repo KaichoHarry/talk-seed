@@ -1,13 +1,32 @@
 -- backend/database/schema.sql
 
--- 外部キー制約を有効化
+-- 外部キー制約を有効化（SQLiteは接続ごとに設定が必要。get_db_connection()側でも都度発行する）
 PRAGMA foreign_keys = ON;
 
--- PERSON (人物情報)
+-- APP_USER (ログイン許可済みユーザー)
+-- アカウント作成は行わず、事前にこのテーブルへ登録されたメールアドレスのみログインできる。
+CREATE TABLE IF NOT EXISTS APP_USER (
+    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT,
+    created_at DATETIME DEFAULT (DATETIME('now', 'localtime'))
+);
+
+-- AUTH_SESSION (ログイントークン)
+CREATE TABLE IF NOT EXISTS AUTH_SESSION (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT (DATETIME('now', 'localtime')),
+    FOREIGN KEY (user_id) REFERENCES APP_USER(user_id) ON DELETE CASCADE
+);
+
+-- PERSON (人物情報。会話相手はユーザーごとに独立させる)
 CREATE TABLE IF NOT EXISTS PERSON (
     person_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
     name TEXT NOT NULL,
-    created_at DATETIME DEFAULT (DATETIME('now', 'localtime'))
+    created_at DATETIME DEFAULT (DATETIME('now', 'localtime')),
+    FOREIGN KEY (user_id) REFERENCES APP_USER(user_id) ON DELETE CASCADE
 );
 
 -- MEMORY (人物記憶)
@@ -20,13 +39,15 @@ CREATE TABLE IF NOT EXISTS MEMORY (
     FOREIGN KEY (person_id) REFERENCES PERSON(person_id) ON DELETE CASCADE
 );
 
--- CONVERSATION (会話)
+-- CONVERSATION (会話。ユーザーごとに所有者を持つ)
 CREATE TABLE IF NOT EXISTS CONVERSATION (
     conversation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
     place_type TEXT,
     purpose_type TEXT,
     started_at DATETIME DEFAULT (DATETIME('now', 'localtime')),
-    ended_at DATETIME
+    ended_at DATETIME,
+    FOREIGN KEY (user_id) REFERENCES APP_USER(user_id) ON DELETE CASCADE
 );
 
 -- CONVERSATION_PARTICIPANT (会話参加者)
@@ -38,22 +59,12 @@ CREATE TABLE IF NOT EXISTS CONVERSATION_PARTICIPANT (
     FOREIGN KEY (person_id) REFERENCES PERSON(person_id) ON DELETE CASCADE
 );
 
--- CONVERSATION_SUMMARY (会話要約)
+-- CONVERSATION_SUMMARY (会話要約。会話全文は保存せず要約のみ保持する)
 CREATE TABLE IF NOT EXISTS CONVERSATION_SUMMARY (
     summary_id INTEGER PRIMARY KEY AUTOINCREMENT,
     conversation_id INTEGER NOT NULL UNIQUE,
     overview TEXT,
     hot_topics TEXT,
     memorable_points TEXT,
-    FOREIGN KEY (conversation_id) REFERENCES CONVERSATION(conversation_id) ON DELETE CASCADE
-);
-
--- CONVERSATION_MESSAGE (発話ログ: 要約生成のために発話を逐次記録する)
-CREATE TABLE IF NOT EXISTS CONVERSATION_MESSAGE (
-    message_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id INTEGER NOT NULL,
-    role TEXT NOT NULL, -- 'user' or 'ai'
-    content TEXT NOT NULL,
-    created_at DATETIME DEFAULT (DATETIME('now', 'localtime')),
     FOREIGN KEY (conversation_id) REFERENCES CONVERSATION(conversation_id) ON DELETE CASCADE
 );

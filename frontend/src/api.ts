@@ -1,9 +1,23 @@
-import type { ConversationHistory, SceneOption } from "./types";
+import type { ConversationHistory, SceneOption, TranscriptEntry } from "./types";
 
 // VITE_API_BASE_URLが未設定の場合は、今アクセスしているホスト名・プロトコルに対して
 // ポート5050で接続する。これにより、PCのlocalhostからでもスマホがLAN経由で
 // PCのIPにアクセスした場合(http/https どちらでも)でも同じビルドで正しいバックエンドに繋がる。
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? `${window.location.protocol}//${window.location.hostname}:5050`;
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
 
 type BackendConversation = {
   conversation_id: number;
@@ -17,7 +31,6 @@ type BackendDetail = {
   hot_topics?: string;
   memorable_points?: string;
   participants?: string[];
-  transcript?: string[];
 };
 
 type BackendSummary = {
@@ -32,13 +45,14 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...init?.headers
     },
     ...init
   });
 
   if (!response.ok) {
-    throw new Error(`TalkSeed API error: ${response.status}`);
+    throw new ApiError(response.status, `TalkSeed API error: ${response.status}`);
   }
 
   return response.json() as Promise<T>;
@@ -55,6 +69,30 @@ function normalizeTopics(value?: string) {
 function normalizeDate(value?: string) {
   if (!value) return "日時未設定";
   return value.replace(/-/g, "/");
+}
+
+export async function login(email: string): Promise<{ token: string; name: string; email: string }> {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email })
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new ApiError(response.status, data.error ?? "ログインに失敗しました");
+  }
+
+  return data;
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await requestJson("/auth/logout", { method: "POST" });
+  } catch {
+    // ログアウトAPIが失敗してもクライアント側のトークンは破棄するので無視してよい
+  }
 }
 
 export async function startConversation(scene: SceneOption, participants: string[]) {
@@ -91,10 +129,10 @@ export async function requestAiResponse(conversationId: number, currentText: str
   return data.response;
 }
 
-export async function endConversation(conversationId: number) {
+export async function endConversation(conversationId: number, transcript: TranscriptEntry[]) {
   const data = await requestJson<BackendSummary>("/conversation/end", {
     method: "POST",
-    body: JSON.stringify({ conversation_id: conversationId })
+    body: JSON.stringify({ conversation_id: conversationId, transcript })
   });
 
   return {
@@ -117,9 +155,12 @@ export async function fetchConversations(): Promise<ConversationHistory[]> {
     overview: row.overview ?? "会話の概要はまだありません。",
     hotTopics: [],
     memorable: "詳細画面で取得します。",
-    transcript: [],
     participants: row.participants ?? []
   }));
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  await requestJson(`/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export async function transcribeAudio(blob: Blob): Promise<string> {
@@ -128,11 +169,12 @@ export async function transcribeAudio(blob: Blob): Promise<string> {
 
   const response = await fetch(`${API_BASE_URL}/voice/transcribe`, {
     method: "POST",
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
     body: formData
   });
 
   if (!response.ok) {
-    throw new Error(`TalkSeed API error: ${response.status}`);
+    throw new ApiError(response.status, `TalkSeed API error: ${response.status}`);
   }
 
   const data = (await response.json()) as { text: string };
@@ -155,7 +197,6 @@ export async function fetchConversationDetail(id: string): Promise<Partial<Conve
     overview: detail.overview ?? "会話の概要はまだありません。",
     hotTopics: normalizeTopics(detail.hot_topics),
     memorable: detail.memorable_points ?? "印象に残った内容はまだありません。",
-    transcript: detail.transcript ?? [],
     participants: detail.participants ?? []
   };
 }

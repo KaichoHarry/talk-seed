@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ApiError,
+  deleteConversation,
   endConversation,
   fetchConversationDetail,
   fetchConversations,
+  login as apiLogin,
+  logout as apiLogout,
   requestAiResponse,
+  setAuthToken,
   startConversation,
   synthesizeSpeech,
   transcribeAudio,
@@ -14,14 +19,20 @@ import { initialParticipants, initialScene, sampleHistories, topics } from "./da
 import { HistoryDetailScreen } from "./screens/HistoryDetailScreen";
 import { HistoryScreen } from "./screens/HistoryScreen";
 import { HomeScreen } from "./screens/HomeScreen";
+import { LoginScreen } from "./screens/LoginScreen";
 import { SceneScreen } from "./screens/SceneScreen";
 import { SummaryScreen } from "./screens/SummaryScreen";
 import { TalkScreen } from "./screens/TalkScreen";
 import { VoiceScreen } from "./screens/VoiceScreen";
-import type { ConversationHistory, ConversationSummary, MicState, RecordingState, Screen, Topic, VoiceOption } from "./types";
+import type { AuthUser, ConversationHistory, ConversationSummary, MicState, RecordingState, Screen, Topic, TranscriptEntry, VoiceOption } from "./types";
+
+const AUTH_STORAGE_KEY = "talkseed_auth";
 
 function App() {
-  const [screen, setScreen] = useState<Screen>("home");
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [screen, setScreen] = useState<Screen>("login");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
   const [setupCompleted, setSetupCompleted] = useState(false);
   const [scene, setScene] = useState(initialScene);
   const [participants, setParticipants] = useState<string[]>(initialParticipants);
@@ -39,6 +50,7 @@ function App() {
   const [micState, setMicState] = useState<MicState>("idle");
   const [lastUserText, setLastUserText] = useState("");
   const [realSummary, setRealSummary] = useState<ConversationSummary | null>(null);
+  const [transcriptLog, setTranscriptLog] = useState<TranscriptEntry[]>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -48,21 +60,74 @@ function App() {
     () => ({
       overview: `${scene.place}で、${currentTopic.text} という話題から会話が広がりました。`,
       hotTopics: ["好きなこと", "今日の楽しみ", "次にしたいこと"],
-      memorable: "会話の中で、次に一緒にやってみたいことが自然に出てきました。",
-      transcript: [`AI：${currentTopic.text}`, "A：それ、いい話題だね。", "B：次はもう少し詳しく話してみたい。"]
+      memorable: "会話の中で、次に一緒にやってみたいことが自然に出てきました。"
     }),
     [currentTopic.text, scene.place]
   );
   const summaryToShow = realSummary ?? currentSummary;
 
-  const navigate = (next: Screen) => {
-    if (!setupCompleted && next !== "home" && next !== "scene" && next !== "voice") return;
-    setScreen(next);
-  };
+  useEffect(() => {
+    const saved = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!saved) return;
+
+    try {
+      const parsed = JSON.parse(saved) as AuthUser;
+      setAuthToken(parsed.token);
+      setUser(parsed);
+      setScreen("home");
+    } catch {
+      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
+  }, []);
 
   const showToast = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 1800);
+  };
+
+  const forceLogout = (message?: string) => {
+    setAuthToken(null);
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    setUser(null);
+    setSetupCompleted(false);
+    setConversationId(null);
+    setScreen("login");
+    if (message) showToast(message);
+  };
+
+  const handleApiError = (e: unknown, fallbackMessage: string) => {
+    if (e instanceof ApiError && e.status === 401) {
+      forceLogout("セッションが切れました。もう一度ログインしてください");
+      return;
+    }
+    showToast(fallbackMessage);
+  };
+
+  const handleLogin = async (email: string) => {
+    setLoginLoading(true);
+    setLoginError("");
+    try {
+      const result = await apiLogin(email);
+      const authUser: AuthUser = { token: result.token, email: result.email, name: result.name };
+      window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+      setAuthToken(result.token);
+      setUser(authUser);
+      setScreen("home");
+    } catch (e) {
+      setLoginError(e instanceof Error ? e.message : "ログインに失敗しました");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await apiLogout();
+    forceLogout();
+  };
+
+  const navigate = (next: Screen) => {
+    if (!setupCompleted && next !== "home" && next !== "scene" && next !== "voice") return;
+    setScreen(next);
   };
 
   const speak = async (text: string) => {
@@ -76,9 +141,9 @@ function App() {
       audio.onerror = () => setVoiceStatus("音声は停止中です");
       setVoiceStatus("AIが読み上げています");
       audio.play().catch(() => setVoiceStatus("音声は停止中です"));
-    } catch {
+    } catch (e) {
       setVoiceStatus("音声は停止中です");
-      showToast("音声合成APIに接続できませんでした");
+      handleApiError(e, "音声合成APIに接続できませんでした");
     }
   };
 
@@ -98,9 +163,10 @@ function App() {
     try {
       const response = await requestAiResponse(conversationId, text);
       setServerTopic({ label: "AIの返答", text: response });
+      setTranscriptLog((current) => [...current, { role: "user", content: text }, { role: "ai", content: response }]);
       speak(response);
-    } catch {
-      showToast("応答APIに接続できませんでした");
+    } catch (e) {
+      handleApiError(e, "応答APIに接続できませんでした");
     } finally {
       setIsApiLoading(false);
     }
@@ -127,8 +193,8 @@ function App() {
           } else {
             await sendUserSpeech(text);
           }
-        } catch {
-          showToast("音声認識APIに接続できませんでした");
+        } catch (e) {
+          handleApiError(e, "音声認識APIに接続できませんでした");
         } finally {
           setMicState("idle");
         }
@@ -160,24 +226,26 @@ function App() {
     let active = true;
     fetchConversations()
       .then((remoteHistories) => {
-        if (active && remoteHistories.length > 0) {
+        if (active) {
           setHistories(remoteHistories);
-          setSelectedHistoryId(remoteHistories[0].id);
+          if (remoteHistories.length > 0) setSelectedHistoryId(remoteHistories[0].id);
         }
       })
-      .catch(() => {
-        if (active) showToast("履歴APIに接続できませんでした");
+      .catch((e) => {
+        if (active) handleApiError(e, "履歴APIに接続できませんでした");
       });
 
     return () => {
       active = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, setupCompleted]);
 
   const beginConversation = async () => {
     setIsApiLoading(true);
     setServerTopic(null);
     setRealSummary(null);
+    setTranscriptLog([]);
 
     const cleanedParticipants = participants.map((name) => name.trim()).filter(Boolean);
 
@@ -185,9 +253,9 @@ function App() {
       const nextConversationId = await startConversation(scene, cleanedParticipants);
       setConversationId(nextConversationId);
       showToast("APIに接続しました");
-    } catch {
+    } catch (e) {
       setConversationId(null);
-      showToast("APIに接続できないためモックで開始します");
+      handleApiError(e, "APIに接続できないためモックで開始します");
     } finally {
       setIsApiLoading(false);
       setSetupCompleted(true);
@@ -205,10 +273,11 @@ function App() {
     try {
       const response = await requestAiResponse(conversationId, prompt);
       setServerTopic({ label: "AIの応答", text: response });
+      setTranscriptLog((current) => [...current, { role: "user", content: prompt }, { role: "ai", content: response }]);
       speak(response);
-    } catch {
+    } catch (e) {
       fallback();
-      showToast("応答APIに接続できませんでした");
+      handleApiError(e, "応答APIに接続できませんでした");
     } finally {
       setIsApiLoading(false);
     }
@@ -218,17 +287,16 @@ function App() {
     if (conversationId) {
       setIsApiLoading(true);
       try {
-        const result = await endConversation(conversationId);
+        const result = await endConversation(conversationId, transcriptLog);
         setRealSummary({
           overview: result.overview || "会話の要約を生成できませんでした。",
           hotTopics: result.hotTopics,
-          memorable: result.memorable,
-          transcript: []
+          memorable: result.memorable
         });
         showToast(result.memoryUpdated ? "会話を要約し、記憶を更新しました" : "会話を要約しました");
-      } catch {
+      } catch (e) {
         setRealSummary(null);
-        showToast("会話終了APIに接続できませんでした");
+        handleApiError(e, "会話終了APIに接続できませんでした");
       } finally {
         setIsApiLoading(false);
       }
@@ -236,6 +304,7 @@ function App() {
       setRealSummary(null);
     }
 
+    setTranscriptLog([]);
     setRecording("idle");
     setRecordingSeconds((value) => value + 24);
     setScreen("summary");
@@ -254,14 +323,13 @@ function App() {
               ? {
                   ...history,
                   ...detail,
-                  hotTopics: detail.hotTopics?.length ? detail.hotTopics : history.hotTopics,
-                  transcript: detail.transcript?.length ? detail.transcript : history.transcript
+                  hotTopics: detail.hotTopics?.length ? detail.hotTopics : history.hotTopics
                 }
               : history
           )
         );
-      } catch {
-        showToast("履歴詳細APIに接続できませんでした");
+      } catch (e) {
+        handleApiError(e, "履歴詳細APIに接続できませんでした");
       } finally {
         setIsApiLoading(false);
       }
@@ -276,14 +344,28 @@ function App() {
     if (/^\d+$/.test(id)) {
       try {
         await updateConversationParticipants(id, cleaned);
-      } catch {
-        showToast("参加者の保存に失敗しました");
+      } catch (e) {
+        handleApiError(e, "参加者の保存に失敗しました");
         return;
       }
     }
 
     setHistories((current) => current.map((history) => (history.id === id ? { ...history, participants: cleaned } : history)));
     showToast("参加者を保存しました");
+  };
+
+  const removeHistory = async (id: string) => {
+    if (/^\d+$/.test(id)) {
+      try {
+        await deleteConversation(id);
+      } catch (e) {
+        handleApiError(e, "履歴の削除に失敗しました");
+        return;
+      }
+    }
+
+    setHistories((current) => current.filter((history) => history.id !== id));
+    showToast("履歴を削除しました");
   };
 
   const saveSummary = () => {
@@ -295,7 +377,6 @@ function App() {
       overview: summaryToShow.overview,
       hotTopics: summaryToShow.hotTopics,
       memorable: summaryToShow.memorable,
-      transcript: summaryToShow.transcript,
       participants: participants.map((name) => name.trim()).filter(Boolean)
     };
     setHistories((current) => [nextHistory, ...current]);
@@ -305,8 +386,9 @@ function App() {
 
   return (
     <main className="app-stage">
-      <section className={`phone-shell ${screen === "home" ? "home-shell" : ""}`}>
+      <section className={`phone-shell ${screen === "home" || screen === "login" ? "home-shell" : ""}`}>
         <div className="phone-scroll">
+          {screen === "login" && <LoginScreen isLoading={loginLoading} errorMessage={loginError} onLogin={handleLogin} />}
           {screen === "home" && <HomeScreen onStart={() => setScreen("scene")} />}
           {screen === "scene" && (
             <SceneScreen
@@ -360,20 +442,20 @@ function App() {
             />
           )}
           {screen === "summary" && <SummaryScreen summary={summaryToShow} onSave={saveSummary} onHistory={() => setScreen("history")} onTalk={() => setScreen("talk")} />}
-          {screen === "history" && <HistoryScreen histories={histories} onDetail={openHistoryDetail} onDelete={(id) => setHistories((current) => current.filter((history) => history.id !== id))} />}
+          {screen === "history" && <HistoryScreen histories={histories} onDetail={openHistoryDetail} onDelete={removeHistory} onLogout={handleLogout} />}
           {screen === "detail" && selectedHistory && (
             <HistoryDetailScreen
               history={selectedHistory}
               onBack={() => setScreen("history")}
               onDelete={() => {
-                setHistories((current) => current.filter((history) => history.id !== selectedHistory.id));
+                removeHistory(selectedHistory.id);
                 setScreen("history");
               }}
               onSaveParticipants={(names) => saveParticipants(selectedHistory.id, names)}
             />
           )}
         </div>
-        {screen !== "home" && setupCompleted && <BottomNav screen={screen} onNavigate={navigate} />}
+        {screen !== "home" && screen !== "login" && setupCompleted && <BottomNav screen={screen} onNavigate={navigate} />}
         {toast && <div className="toast is-visible">{toast}</div>}
       </section>
     </main>

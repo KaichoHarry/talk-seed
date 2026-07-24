@@ -24,6 +24,7 @@ DB_PATH = os.path.join(BASE_DIR, 'database', 'talkseed.db')
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 def get_participants_memories(conversation_id):
@@ -101,8 +102,7 @@ def generate_ai_response(conversation_id, current_text):
                 config=types.GenerateContentConfig(
                     system_instruction=system_prompt,
                     temperature=0.7,
-                    max_output_tokens=120,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0)
+                    max_output_tokens=120
                 )
             )
 
@@ -130,31 +130,7 @@ def generate_ai_response(conversation_id, current_text):
         return "おや、少し聞き取れませんでした。もう一度お話しいただけますか？"
 
 
-def get_conversation_messages(conversation_id):
-    """会話IDに紐づく発話ログ（ユーザー発話・AI応答）を時系列で取得する"""
-    conn = get_db_connection()
-    rows = conn.execute(
-        "SELECT role, content FROM CONVERSATION_MESSAGE WHERE conversation_id = ? ORDER BY message_id",
-        (conversation_id,)
-    ).fetchall()
-    conn.close()
-    return [{"role": row["role"], "content": row["content"]} for row in rows]
-
-
-def save_conversation_message(conversation_id, role, content):
-    """1発話分をCONVERSATION_MESSAGEへ保存する"""
-    if not content:
-        return
-    conn = get_db_connection()
-    conn.execute(
-        "INSERT INTO CONVERSATION_MESSAGE (conversation_id, role, content) VALUES (?, ?, ?)",
-        (conversation_id, role, content)
-    )
-    conn.commit()
-    conn.close()
-
-
-def _save_memories(cursor, names, memories):
+def _save_memories(cursor, user_id, names, memories):
     """人物ごとの記憶を保存する。namesは今回の会話参加者名のホワイトリスト。"""
     saved = 0
     for memory in memories:
@@ -165,7 +141,7 @@ def _save_memories(cursor, names, memories):
         if not name or not content or name not in names:
             continue
 
-        cursor.execute("SELECT person_id FROM PERSON WHERE name = ?", (name,))
+        cursor.execute("SELECT person_id FROM PERSON WHERE name = ? AND user_id = ?", (name, user_id))
         row = cursor.fetchone()
         if not row:
             continue
@@ -179,13 +155,18 @@ def _save_memories(cursor, names, memories):
     return saved
 
 
-def generate_conversation_summary(conversation_id):
-    """会話終了時に、発話ログをもとにGeminiで要約と人物記憶の抽出を行い、DBへ保存する"""
+def generate_conversation_summary(conversation_id, user_id, transcript):
+    """会話終了時に、フロントから渡された発話ログ(transcript)をもとにGeminiで要約と
+    人物記憶の抽出を行いDBへ保存する。会話全文はDBに保存しない（要約のみ保持）。
+
+    transcript: [{"role": "user"|"ai", "content": str}, ...]
+    """
     names, _ = get_participants_memories(conversation_id)
-    messages = get_conversation_messages(conversation_id)
 
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    messages = [m for m in transcript if m.get("content")]
 
     if not messages:
         overview = "この会話では発話の記録がありませんでした。"
@@ -223,15 +204,14 @@ def generate_conversation_summary(conversation_id):
                 config=types.GenerateContentConfig(
                     temperature=0.4,
                     max_output_tokens=500,
-                    response_mime_type="application/json",
-                    thinking_config=types.ThinkingConfig(thinking_budget=0)
+                    response_mime_type="application/json"
                 )
             )
             data = json.loads(response.text)
             overview = data.get("overview", "")
             hot_topics = data.get("hot_topics", "")
             memorable_points = data.get("memorable_points", "")
-            memory_saved = _save_memories(cursor, names, data.get("memories", []))
+            memory_saved = _save_memories(cursor, user_id, names, data.get("memories", []))
         except Exception as e:
             print("\n=== 🚨 会話要約生成エラー 🚨 ===")
             print(f"エラーの種類 (Type): {type(e)}")

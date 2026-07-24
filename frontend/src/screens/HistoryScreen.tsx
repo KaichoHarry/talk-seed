@@ -3,10 +3,27 @@ import mascot from "../assets/mascot.svg";
 import { Header } from "../components/Header";
 import type { ConversationHistory } from "../types";
 
-export function HistoryScreen({ histories, onDetail, onDelete }: { histories: ConversationHistory[]; onDetail: (id: string) => void; onDelete: (id: string) => void }) {
+export function HistoryScreen({
+  histories,
+  onDetail,
+  onDelete,
+  onLogout
+}: {
+  histories: ConversationHistory[];
+  onDetail: (id: string) => void;
+  onDelete: (id: string) => void;
+  onLogout: () => void;
+}) {
   return (
     <>
-      <Header title="履歴一覧" />
+      <Header
+        title="履歴一覧"
+        right={
+          <button type="button" onClick={onLogout}>
+            ログアウト
+          </button>
+        }
+      />
       <section className="history-list">
         {histories.map((history) => (
           <article className="soft-card history-card" key={history.id}>

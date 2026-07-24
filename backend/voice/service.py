@@ -10,8 +10,6 @@ _model = None
 VOICE_PROFILES = {
     "female": {"voice": "ja-JP-NanamiNeural", "rate": "+0%", "pitch": "+0Hz"},
     "male": {"voice": "ja-JP-KeitaNeural", "rate": "+0%", "pitch": "+0Hz"},
-    # 男性音声を土台に低ピッチ+一定速化してロボットらしさを出す(edge-ttsにロボット専用ボイスは無いため)
-    "robot": {"voice": "ja-JP-KeitaNeural", "rate": "-15%", "pitch": "-45Hz"},
 }
 
 

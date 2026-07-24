@@ -1,5 +1,5 @@
-export type Screen = "home" | "scene" | "voice" | "talk" | "summary" | "history" | "detail";
-export type VoiceType = "female" | "male" | "robot";
+export type Screen = "login" | "home" | "scene" | "voice" | "talk" | "summary" | "history" | "detail";
+export type VoiceType = "female" | "male";
 export type RecordingState = "idle" | "recording" | "paused";
 export type MicState = "idle" | "recording" | "processing";
 
@@ -23,13 +23,23 @@ export type ConversationHistory = {
   overview: string;
   hotTopics: string[];
   memorable: string;
-  transcript: string[];
   participants: string[];
 };
 
-export type ConversationSummary = Pick<ConversationHistory, "overview" | "hotTopics" | "memorable" | "transcript">;
+export type ConversationSummary = Pick<ConversationHistory, "overview" | "hotTopics" | "memorable">;
 
 export type Topic = {
   label: string;
   text: string;
+};
+
+export type TranscriptEntry = {
+  role: "user" | "ai";
+  content: string;
+};
+
+export type AuthUser = {
+  token: string;
+  email: string;
+  name: string;
 };

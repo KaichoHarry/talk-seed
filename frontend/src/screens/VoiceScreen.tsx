@@ -30,8 +30,7 @@ export function VoiceScreen({
         <div className="segmented">
           {[
             ["female", "女性音声"],
-            ["male", "男性音声"],
-            ["robot", "ロボット"]
+            ["male", "男性音声"]
           ].map(([type, label]) => (
             <button className="segment" type="button" key={type} aria-pressed={voice.type === type} onClick={() => setVoice((current) => ({ ...current, type: type as VoiceType }))}>
               {label}

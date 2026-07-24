@@ -1,16 +1,17 @@
 # backend/api/app.py
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 import sqlite3
 import os
+import secrets
 import tempfile
+from functools import wraps
 
-# backend/api/app.py (インポート部分に追加)
-from backend.llm.ai_sys import generate_ai_response, generate_conversation_summary, save_conversation_message, get_conversation_messages
+from backend.llm.ai_sys import generate_ai_response, generate_conversation_summary
 from backend.voice.service import transcribe_audio_file, synthesize_speech
 
 app = Flask(__name__)
-app.json.ensure_ascii = False  # 👈 これを追加（日本語の文字化けを防ぐ）
+app.json.ensure_ascii = False  # 日本語の文字化けを防ぐ
 CORS(app)  # フロントエンドからのクロスドメインリクエストを許可
 
 # SQLiteのデータベースパス
@@ -21,19 +22,90 @@ def get_db_connection():
     """SQLiteへの接続を取得するヘルパー関数"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row  # カラム名でデータにアクセスできるようにする
+    conn.execute("PRAGMA foreign_keys = ON")  # SQLiteは接続ごとに有効化が必要
     return conn
+
+# --------------------------------------------------
+# 認証
+# --------------------------------------------------
+# アカウント作成機能は無く、事前にAPP_USERへ登録されたメールアドレスのみログインできる。
+# パスワードは無いため、メールアドレスを知っていれば誰でもそのユーザーとしてログインできる点に注意
+# (小規模な信頼できるグループでの利用を想定した簡易実装)。
+
+def require_auth(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        auth_header = request.headers.get('Authorization', '')
+        token = auth_header[7:] if auth_header.startswith('Bearer ') else None
+
+        if not token:
+            return jsonify({"error": "unauthorized"}), 401
+
+        conn = get_db_connection()
+        row = conn.execute(
+            "SELECT user_id FROM AUTH_SESSION WHERE token = ?", (token,)
+        ).fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({"error": "unauthorized"}), 401
+
+        g.user_id = row['user_id']
+        return f(*args, **kwargs)
+
+    return wrapper
+
+@app.route('/auth/login', methods=['POST'])
+def login():
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+
+    if not email:
+        return jsonify({"error": "email is required"}), 400
+
+    conn = get_db_connection()
+    user = conn.execute("SELECT user_id, name, email FROM APP_USER WHERE email = ?", (email,)).fetchone()
+
+    if not user:
+        conn.close()
+        return jsonify({"error": "このメールアドレスは登録されていません"}), 401
+
+    token = secrets.token_urlsafe(32)
+    conn.execute("INSERT INTO AUTH_SESSION (token, user_id) VALUES (?, ?)", (token, user['user_id']))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"token": token, "name": user['name'], "email": user['email']}), 200
+
+@app.route('/auth/logout', methods=['POST'])
+@require_auth
+def logout():
+    auth_header = request.headers.get('Authorization', '')
+    token = auth_header[7:]
+
+    conn = get_db_connection()
+    conn.execute("DELETE FROM AUTH_SESSION WHERE token = ?", (token,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"logged_out": True}), 200
+
+def get_conversation_owner(cursor, conversation_id):
+    row = cursor.execute("SELECT user_id FROM CONVERSATION WHERE conversation_id = ?", (conversation_id,)).fetchone()
+    return row['user_id'] if row else None
 
 # --------------------------------------------------
 # 8.1 会話開始API (本実装版)
 # --------------------------------------------------
 @app.route('/conversation/start', methods=['POST'])
+@require_auth
 def start_conversation():
     data = request.json
     place_type = data.get('place_type')
     purpose_type = data.get('purpose_type')
     participants = data.get('participants', [])
 
-    print(f"[Start] Place: {place_type}, Purpose: {purpose_type}, Participants: {participants}")
+    print(f"[Start] User: {g.user_id}, Place: {place_type}, Purpose: {purpose_type}, Participants: {participants}")
 
     try:
         conn = get_db_connection()
@@ -41,23 +113,22 @@ def start_conversation():
 
         # 1. CONVERSATION テーブルに新しい会話を登録
         cursor.execute(
-            "INSERT INTO CONVERSATION (place_type, purpose_type) VALUES (?, ?)",
-            (place_type, purpose_type)
+            "INSERT INTO CONVERSATION (user_id, place_type, purpose_type) VALUES (?, ?, ?)",
+            (g.user_id, place_type, purpose_type)
         )
         conversation_id = cursor.lastrowid
 
-        # 2. 参加者を登録（いなければ新規登録、いればそのIDを使う）
+        # 2. 参加者を登録（このユーザーの中で同名の人物がいなければ新規登録、いればそのIDを使う）
         for name in participants:
-            cursor.execute("SELECT person_id FROM PERSON WHERE name = ?", (name,))
+            cursor.execute("SELECT person_id FROM PERSON WHERE name = ? AND user_id = ?", (name, g.user_id))
             row = cursor.fetchone()
-            
+
             if row:
                 person_id = row['person_id']
             else:
-                cursor.execute("INSERT INTO PERSON (name) VALUES (?)", (name,))
+                cursor.execute("INSERT INTO PERSON (user_id, name) VALUES (?, ?)", (g.user_id, name))
                 person_id = cursor.lastrowid
-            
-            # 会話と参加者の紐付け
+
             cursor.execute(
                 "INSERT INTO CONVERSATION_PARTICIPANT (conversation_id, person_id) VALUES (?, ?)",
                 (conversation_id, person_id)
@@ -79,19 +150,22 @@ def start_conversation():
 # 8.2 AI応答生成API (本実装版)
 # --------------------------------------------------
 @app.route('/conversation/respond', methods=['POST'])
+@require_auth
 def generate_response():
     data = request.json
     conversation_id = data.get('conversation_id')
     current_text = data.get('current_text')
 
+    conn = get_db_connection()
+    owner = get_conversation_owner(conn.cursor(), conversation_id)
+    conn.close()
+    if owner != g.user_id:
+        return jsonify({"error": "not found"}), 404
+
     print(f"[Respond] ID: {conversation_id}, User Message: {current_text}")
 
-    # モックではなく、実際にDBから記憶を引いてLLMを叩く！
+    # 実際にDBから記憶を引いてLLMを叩く。会話全文は保存しない(フロント側でのみ一時的に保持する)。
     response_text = generate_ai_response(conversation_id, current_text)
-
-    # 要約生成のため、発話ログを保存しておく
-    save_conversation_message(conversation_id, 'user', current_text)
-    save_conversation_message(conversation_id, 'ai', response_text)
 
     return jsonify({
         "response": response_text
@@ -101,14 +175,22 @@ def generate_response():
 # 8.3 会話終了API
 # --------------------------------------------------
 @app.route('/conversation/end', methods=['POST'])
+@require_auth
 def end_conversation():
     data = request.json
     conversation_id = data.get('conversation_id')
+    transcript = data.get('transcript', [])  # [{role: 'user'|'ai', content: str}, ...] フロントが保持していたものを渡す。DBには保存しない。
 
-    print(f"[End] Conversation ID: {conversation_id}")
+    conn = get_db_connection()
+    owner = get_conversation_owner(conn.cursor(), conversation_id)
+    conn.close()
+    if owner != g.user_id:
+        return jsonify({"error": "not found"}), 404
+
+    print(f"[End] Conversation ID: {conversation_id}, Messages: {len(transcript)}")
 
     try:
-        summary = generate_conversation_summary(conversation_id)
+        summary = generate_conversation_summary(conversation_id, g.user_id, transcript)
         return jsonify({
             "summary_created": True,
             "memory_updated": summary["memory_updated"],
@@ -130,23 +212,22 @@ def end_conversation():
 # 8.4 履歴一覧取得API
 # --------------------------------------------------
 @app.route('/conversations', methods=['GET'])
+@require_auth
 def get_conversations_list():
-    print("[Get List] Fetching history...")
+    print(f"[Get List] User: {g.user_id}")
 
-    # 💡 せっかくなので、ここはさっき作ったSQLiteのテストデータから取ってきてみましょう！
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        # CONVERSATIONとSUMMARYを結合して簡易的に取得
         query = """
             SELECT c.conversation_id, strftime('%Y-%m-%d', c.started_at) as date, s.overview
             FROM CONVERSATION c
             LEFT JOIN CONVERSATION_SUMMARY s ON c.conversation_id = s.conversation_id
+            WHERE c.user_id = ?
             ORDER BY c.conversation_id DESC
         """
-        rows = cursor.execute(query).fetchall()
+        rows = cursor.execute(query, (g.user_id,)).fetchall()
 
-        # SQLiteのRowオブジェクトをシリアライズ可能な辞書リストに変換し、参加者名も付与
         conversations = []
         for row in rows:
             conversation = dict(row)
@@ -156,12 +237,7 @@ def get_conversations_list():
         conn.close()
     except Exception as e:
         print(f"DB Error: {e}")
-        # DBエラー時のフォールバック（設計書のモックデータ）
-        conversations = [{
-            "conversation_id": 15,
-            "date": "2026-06-23",
-            "overview": "旅行と就活の話題"
-        }]
+        conversations = []
 
     return jsonify(conversations), 200
 
@@ -179,37 +255,24 @@ def get_participant_names(cursor, conversation_id):
 # 8.5 履歴詳細取得API
 # --------------------------------------------------
 @app.route('/conversations/<int:conversation_id>', methods=['GET'])
+@require_auth
 def get_conversation_detail(conversation_id):
     print(f"[Get Detail] Fetching ID: {conversation_id}")
 
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        query = "SELECT overview, hot_topics, memorable_points FROM CONVERSATION_SUMMARY WHERE conversation_id = ?"
-        row = cursor.execute(query, (conversation_id,)).fetchone()
-        participants = get_participant_names(cursor, conversation_id)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if get_conversation_owner(cursor, conversation_id) != g.user_id:
         conn.close()
+        return jsonify({"error": "not found"}), 404
 
-        if row:
-            detail = dict(row)
-        else:
-            detail = {"overview": "", "hot_topics": "", "memorable_points": ""}
+    query = "SELECT overview, hot_topics, memorable_points FROM CONVERSATION_SUMMARY WHERE conversation_id = ?"
+    row = cursor.execute(query, (conversation_id,)).fetchone()
+    participants = get_participant_names(cursor, conversation_id)
+    conn.close()
 
-        detail["participants"] = participants
-        detail["transcript"] = [
-            f"{'あなた' if m['role'] == 'user' else 'AI'}：{m['content']}"
-            for m in get_conversation_messages(conversation_id)
-        ]
-    except Exception as e:
-        print(f"DB Error: {e}")
-        # フォールバックモック
-        detail = {
-            "overview": "旅行と就活の話題（モック）",
-            "hot_topics": "京都旅行、インターン選考（モック）",
-            "memorable_points": "山田さんが京都の温泉をおすすめしていました。（モック）",
-            "participants": [],
-            "transcript": []
-        }
+    detail = dict(row) if row else {"overview": "", "hot_topics": "", "memorable_points": ""}
+    detail["participants"] = participants
 
     return jsonify(detail), 200
 
@@ -217,24 +280,29 @@ def get_conversation_detail(conversation_id):
 # 8.6 参加者名の編集API（後から名前を記録・修正する）
 # --------------------------------------------------
 @app.route('/conversations/<int:conversation_id>/participants', methods=['PUT'])
+@require_auth
 def update_conversation_participants(conversation_id):
     data = request.json or {}
     names = [n.strip() for n in data.get('participants', []) if n and n.strip()]
 
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
+    if get_conversation_owner(cursor, conversation_id) != g.user_id:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+
+    try:
         cursor.execute("DELETE FROM CONVERSATION_PARTICIPANT WHERE conversation_id = ?", (conversation_id,))
 
         for name in names:
-            cursor.execute("SELECT person_id FROM PERSON WHERE name = ?", (name,))
+            cursor.execute("SELECT person_id FROM PERSON WHERE name = ? AND user_id = ?", (name, g.user_id))
             row = cursor.fetchone()
 
             if row:
                 person_id = row['person_id']
             else:
-                cursor.execute("INSERT INTO PERSON (name) VALUES (?)", (name,))
+                cursor.execute("INSERT INTO PERSON (user_id, name) VALUES (?, ?)", (g.user_id, name))
                 person_id = cursor.lastrowid
 
             cursor.execute(
@@ -247,14 +315,35 @@ def update_conversation_participants(conversation_id):
 
         return jsonify({"participants": names}), 200
     except Exception as e:
+        conn.close()
         print(f"Error updating participants: {e}")
         return jsonify({"error": "Failed to update participants"}), 500
 
+# --------------------------------------------------
+# 8.7 会話履歴削除API
+# --------------------------------------------------
+@app.route('/conversations/<int:conversation_id>', methods=['DELETE'])
+@require_auth
+def delete_conversation(conversation_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if get_conversation_owner(cursor, conversation_id) != g.user_id:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+
+    cursor.execute("DELETE FROM CONVERSATION WHERE conversation_id = ?", (conversation_id,))
+    conn.commit()
+    conn.close()
+
+    print(f"[Delete] Conversation ID: {conversation_id}")
+    return jsonify({"deleted": True}), 200
 
 # --------------------------------------------------
 # 音声認識API (プッシュトゥトーク: 録音音声 → テキスト)
 # --------------------------------------------------
 @app.route('/voice/transcribe', methods=['POST'])
+@require_auth
 def voice_transcribe():
     audio_file = request.files.get('audio')
     if audio_file is None:
@@ -280,6 +369,7 @@ def voice_transcribe():
 # 音声合成API (テキスト → 音声base64)
 # --------------------------------------------------
 @app.route('/voice/speak', methods=['POST'])
+@require_auth
 def voice_speak():
     data = request.json
     text = data.get('text')

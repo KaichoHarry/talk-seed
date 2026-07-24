@@ -38,6 +38,11 @@ htmlcov/
 
 # Local HTTPS certificates (mkcert)
 certs/
+certs_mkcert_backup/
+*.pem
+
+# ログインを許可する個人のメールアドレス一覧(Git管理外)
+backend/database/local_users.sql
 
 # =========================
 

@@ -82,6 +82,7 @@ button {
 }
 
 .topbar {
+  position: relative;
   display: block;
   margin-bottom: 16px;
   text-align: center;
@@ -92,6 +93,21 @@ button {
   text-align: center;
   font-size: 20px;
   font-weight: 900;
+}
+
+.topbar-action {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.topbar-action button {
+  border: none;
+  background: none;
+  color: #506783;
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .icon-button {
@@ -178,6 +194,23 @@ button {
   color: #506783;
   font-size: 14px;
   line-height: 1.7;
+}
+
+.login-hero {
+  padding-top: 40px;
+}
+
+.login-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.login-error {
+  margin: 0;
+  color: #d92d20;
+  font-size: 13px;
+  text-align: center;
 }
 
 .page-intro-note {

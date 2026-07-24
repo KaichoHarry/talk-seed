@@ -77,10 +77,6 @@ export function HistoryDetailScreen({
           </div>
         </article>
         <SummaryCards summary={history} />
-        <article className="soft-card card-pad">
-          <h3>会話全文</h3>
-          <p>{history.transcript.join("\n")}</p>
-        </article>
       </section>
       <div className="screen-action button-row">
         <button className="button secondary" type="button" onClick={onBack}>
