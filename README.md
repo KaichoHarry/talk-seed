@@ -184,6 +184,31 @@ turso db shell talkseed < backend/database/schema.sql
 
 ---
 
+## Webへのデプロイ
+
+バックエンドは **Hugging Face Spaces**（Docker SDK）、フロントエンドは **Vercel** にデプロイする構成です。
+
+### バックエンド（Hugging Face Spaces）
+
+1. Hugging Faceでアカウント作成 → 「New Space」でSDKに`Docker`を選択して作成
+2. Space の `Settings > Variables and secrets` に `GEMINI_API_KEY` / `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` をSecretとして登録
+3. リポジトリルートの `Dockerfile` を使って、Spaceの git remote へpushするとビルド・デプロイされる
+
+```bash
+git remote add space https://huggingface.co/spaces/<username>/<space-name>
+git push space develop:main
+```
+
+`Dockerfile`はCPU専用のPyTorchを明示的にインストールしている点がポイントです（指定しないとGPU向けCUDAライブラリ込みで数GB分のダウンロードが発生し、ビルドが極端に重くなるため）。
+
+### フロントエンド（Vercel）
+
+1. VercelでGitHub連携しリポジトリをインポート
+2. `Root Directory` を `frontend` に設定（Framework Presetは自動でVite）
+3. 環境変数 `VITE_API_BASE_URL` に、Hugging Face SpacesのURL（例: `https://<username>-<space-name>.hf.space`）を設定
+
+---
+
 ## ログインを許可するユーザーの登録
 
 アカウント作成機能は無く、事前に `APP_USER` テーブルへ登録されたメールアドレスでのみログインできます。個人のメールアドレスは**Gitで管理しているファイルには絶対に書かない**でください。
@@ -252,7 +277,7 @@ python3 backend/database/init_db.py
 
 ## 今後の予定
 
-* Webへのデプロイ（ホスティング先の選定、SQLiteの永続化方法の検討、本番用の認証強化など）
+* 本番運用を見据えた認証強化（現状はメールアドレスのみの簡易認証）
 
 ---
 
