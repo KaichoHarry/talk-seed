@@ -1,0 +1,14 @@
+frontend/
+docs/
+certs/
+certs_mkcert_backup/
+backend/database/*.db
+backend/database/local_users.sql
+.git/
+.env
+.env.*
+*.pem
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
