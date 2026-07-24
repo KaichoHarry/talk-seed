@@ -1,12 +1,12 @@
 # backend/api/app.py
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
-import sqlite3
 import os
 import secrets
 import tempfile
 from functools import wraps
 
+from backend.database.db import get_db_connection
 from backend.llm.ai_sys import generate_ai_response, generate_conversation_summary
 from backend.voice.service import transcribe_audio_file, synthesize_speech
 
@@ -14,16 +14,7 @@ app = Flask(__name__)
 app.json.ensure_ascii = False  # 日本語の文字化けを防ぐ
 CORS(app)  # フロントエンドからのクロスドメインリクエストを許可
 
-# SQLiteのデータベースパス
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # backend/
-DB_PATH = os.path.join(BASE_DIR, 'database', 'talkseed.db')
-
-def get_db_connection():
-    """SQLiteへの接続を取得するヘルパー関数"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # カラム名でデータにアクセスできるようにする
-    conn.execute("PRAGMA foreign_keys = ON")  # SQLiteは接続ごとに有効化が必要
-    return conn
 
 # --------------------------------------------------
 # 認証

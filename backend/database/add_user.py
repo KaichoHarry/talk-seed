@@ -5,15 +5,15 @@
 # 使い方:
 #   python3 backend/database/add_user.py member@example.com "メンバーの名前"
 import argparse
-import os
-import sqlite3
+import sys
+from pathlib import Path
 
-BASE_DIR = os.path.dirname(__file__)
-DB_PATH = os.path.join(BASE_DIR, 'talkseed.db')
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from db import get_db_connection  # noqa: E402  (TURSO_DATABASE_URLがあればTursoへ、無ければローカルSQLiteへ)
 
 
 def add_user(email: str, name: str):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     conn.execute(
         "INSERT INTO APP_USER (email, name) VALUES (?, ?) "
         "ON CONFLICT(email) DO UPDATE SET name = excluded.name",

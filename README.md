@@ -61,6 +61,13 @@ TalkSeedは、飲食店やイベント会場などの待ち時間で会話が途
 GEMINI_API_KEY=your-api-key-here
 ```
 
+Tursoに接続する場合（本番想定）は、加えて以下も設定してください。未設定の場合は自動でローカルのSQLiteファイルが使われます。
+
+```
+TURSO_DATABASE_URL=libsql://xxxxx.turso.io
+TURSO_AUTH_TOKEN=xxxxx
+```
+
 ### 2. バックエンド
 
 ```bash
@@ -134,6 +141,46 @@ mkcert -CAROOT
 * LAN IPはネットワークに再接続すると変わることがあります。変わった場合は証明書を発行し直してください。
 * スマホ側のWiFi/テザリングで「クライアント分離（AP分離）」が有効だと、同じネットワークにいてもPCにアクセスできません。その場合は設定をオフにするか、PCのテザリングにスマホをぶら下げる構成にしてください。
 * PCのファイアウォールで接続がブロックされる場合は、Python（Flask）・Node（Vite）の着信を許可してください。
+
+---
+
+## データベースをTursoに切り替える（本番デプロイ向け）
+
+Web上のホスティング（Hugging Face Spacesなど）にバックエンドをデプロイする場合、コンテナのローカルファイルシステムは再ビルド・再起動でリセットされることが多く、SQLiteファイルをそのまま使うとデータが消えてしまいます。そのため本番では [Turso](https://turso.tech/)（SQLite互換の永続クラウドDB）へ接続する構成にしています。
+
+`TURSO_DATABASE_URL` が `.env` に設定されていれば自動でTursoへ接続し、無ければ今まで通りローカルのSQLiteファイルを使います（コードは変更不要）。
+
+### 1. Turso CLIのインストールとログイン（初回のみ）
+
+```bash
+brew install tursodatabase/tap/turso
+turso auth signup   # 初めての場合。2回目以降は turso auth login
+```
+
+### 2. データベースの作成
+
+```bash
+turso db create talkseed
+```
+
+### 3. 接続情報の取得
+
+```bash
+turso db show talkseed --url
+turso db tokens create talkseed
+```
+
+それぞれの出力を `.env` の `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` に設定してください。
+
+### 4. スキーマの反映
+
+ローカルのSQLiteと違い、Tursoのデータベースは空の状態で作られるので、スキーマを流し込む必要があります。
+
+```bash
+turso db shell talkseed < backend/database/schema.sql
+```
+
+ログイン許可ユーザーも同様に、`turso db shell talkseed` でシェルに入って `INSERT INTO APP_USER ...` を直接実行するか、`backend/database/add_user.py` を実行する環境（`.env`にTURSO_DATABASE_URL等を設定した状態）から追加してください。
 
 ---
 

@@ -1,11 +1,12 @@
 # backend/llm/ai_sys.py
 import json
 import os
-import sqlite3
 import time
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+
+from backend.database.db import get_db_connection
 
 # .env ファイルから環境変数を読み込む
 load_dotenv()
@@ -16,16 +17,6 @@ api_key = os.getenv("GEMINI_API_KEY")
 # 💡 クライアント初期化時にタイムアウトを「30秒」に設定します（Pydanticエラーも出ません）
 # 個別リクエスト側ではなく、ここで設定するのが最新SDKの最も安定する挙動です
 client = genai.Client(api_key=api_key)
-
-# データベースのパス
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # backend/
-DB_PATH = os.path.join(BASE_DIR, 'database', 'talkseed.db')
-
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
 
 def get_participants_memories(conversation_id):
     """会話IDから参加者とその過去の記憶を取得する"""
