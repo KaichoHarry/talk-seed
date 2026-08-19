@@ -7,7 +7,7 @@ import tempfile
 from functools import wraps
 
 from backend.database.db import get_db_connection
-from backend.llm.ai_sys import generate_ai_response, generate_conversation_summary
+from backend.llm.ai_sys import generate_ai_response, generate_ai_response_stateless, generate_conversation_summary, generate_guest_summary
 from backend.voice.service import transcribe_audio_file, synthesize_speech
 
 app = Flask(__name__)
@@ -22,6 +22,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # backend/
 # アカウント作成機能は無く、事前にAPP_USERへ登録されたメールアドレスのみログインできる。
 # パスワードは無いため、メールアドレスを知っていれば誰でもそのユーザーとしてログインできる点に注意
 # (小規模な信頼できるグループでの利用を想定した簡易実装)。
+#
+# ゲストログイン: ハッカソン等でアプリを一時的に触ってもらうためのモード。
+# APP_USER/AUTH_SESSIONに何も登録せず、"GUEST_"で始まるトークンをその場で発行するだけなので、
+# DBの状態を一切変更しない。トークンはDBに保存されないため、このプレフィックスさえ付いていれば
+# 検証を通す(ゲストは実データに一切アクセスできないので、なりすまし対策は不要)。
+GUEST_TOKEN_PREFIX = "GUEST_"
 
 def require_auth(f):
     @wraps(f)
@@ -31,6 +37,11 @@ def require_auth(f):
 
         if not token:
             return jsonify({"error": "unauthorized"}), 401
+
+        if token.startswith(GUEST_TOKEN_PREFIX):
+            g.user_id = None
+            g.is_guest = True
+            return f(*args, **kwargs)
 
         conn = get_db_connection()
         row = conn.execute(
@@ -42,9 +53,15 @@ def require_auth(f):
             return jsonify({"error": "unauthorized"}), 401
 
         g.user_id = row['user_id']
+        g.is_guest = False
         return f(*args, **kwargs)
 
     return wrapper
+
+@app.route('/auth/guest-login', methods=['POST'])
+def guest_login():
+    token = GUEST_TOKEN_PREFIX + secrets.token_urlsafe(32)
+    return jsonify({"token": token, "name": "ゲスト", "email": None, "is_guest": True}), 200
 
 @app.route('/auth/login', methods=['POST'])
 def login():
@@ -98,6 +115,11 @@ def start_conversation():
 
     print(f"[Start] User: {g.user_id}, Place: {place_type}, Purpose: {purpose_type}, Participants: {participants}")
 
+    if g.is_guest:
+        # ゲストはDBに一切書き込まない。以降のrespond/endはconversation_idを使わず、
+        # フロントから毎回participantsを渡してもらうステートレスな処理に切り替える。
+        return jsonify({"conversation_id": 0}), 200
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -146,6 +168,12 @@ def generate_response():
     data = request.json
     conversation_id = data.get('conversation_id')
     current_text = data.get('current_text')
+    participants = data.get('participants', [])
+
+    if g.is_guest:
+        print(f"[Respond][Guest] Participants: {participants}, User Message: {current_text}")
+        response_text = generate_ai_response_stateless(participants, current_text)
+        return jsonify({"response": response_text}), 200
 
     conn = get_db_connection()
     owner = get_conversation_owner(conn.cursor(), conversation_id)
@@ -171,6 +199,28 @@ def end_conversation():
     data = request.json
     conversation_id = data.get('conversation_id')
     transcript = data.get('transcript', [])  # [{role: 'user'|'ai', content: str}, ...] フロントが保持していたものを渡す。DBには保存しない。
+    participants = data.get('participants', [])
+
+    if g.is_guest:
+        print(f"[End][Guest] Participants: {participants}, Messages: {len(transcript)}")
+        try:
+            summary = generate_guest_summary(participants, transcript)
+            return jsonify({
+                "summary_created": True,
+                "memory_updated": False,
+                "overview": summary["overview"],
+                "hot_topics": summary["hot_topics"],
+                "memorable_points": summary["memorable_points"]
+            }), 200
+        except Exception as e:
+            print(f"Error generating guest summary: {e}")
+            return jsonify({
+                "summary_created": False,
+                "memory_updated": False,
+                "overview": "",
+                "hot_topics": "",
+                "memorable_points": ""
+            }), 200
 
     conn = get_db_connection()
     owner = get_conversation_owner(conn.cursor(), conversation_id)
@@ -206,6 +256,10 @@ def end_conversation():
 @require_auth
 def get_conversations_list():
     print(f"[Get List] User: {g.user_id}")
+
+    if g.is_guest:
+        # ゲストはDBに履歴を残さないため、常に空一覧を返す。
+        return jsonify([]), 200
 
     try:
         conn = get_db_connection()
@@ -250,6 +304,9 @@ def get_participant_names(cursor, conversation_id):
 def get_conversation_detail(conversation_id):
     print(f"[Get Detail] Fetching ID: {conversation_id}")
 
+    if g.is_guest:
+        return jsonify({"error": "not found"}), 404
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -275,6 +332,9 @@ def get_conversation_detail(conversation_id):
 def update_conversation_participants(conversation_id):
     data = request.json or {}
     names = [n.strip() for n in data.get('participants', []) if n and n.strip()]
+
+    if g.is_guest:
+        return jsonify({"error": "not found"}), 404
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -316,6 +376,9 @@ def update_conversation_participants(conversation_id):
 @app.route('/conversations/<int:conversation_id>', methods=['DELETE'])
 @require_auth
 def delete_conversation(conversation_id):
+    if g.is_guest:
+        return jsonify({"error": "not found"}), 404
+
     conn = get_db_connection()
     cursor = conn.cursor()
 

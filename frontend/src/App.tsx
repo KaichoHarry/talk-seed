@@ -5,6 +5,7 @@ import {
   endConversation,
   fetchConversationDetail,
   fetchConversations,
+  guestLogin as apiGuestLogin,
   login as apiLogin,
   logout as apiLogout,
   requestAiResponse,
@@ -33,6 +34,7 @@ function App() {
   const [screen, setScreen] = useState<Screen>("login");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [guestLoginLoading, setGuestLoginLoading] = useState(false);
   const [setupCompleted, setSetupCompleted] = useState(false);
   const [scene, setScene] = useState(initialScene);
   const [participants, setParticipants] = useState<string[]>(initialParticipants);
@@ -56,6 +58,7 @@ function App() {
 
   const currentTopic = serverTopic ?? topics[topicIndex % topics.length];
   const selectedHistory = histories.find((history) => history.id === selectedHistoryId) ?? histories[0];
+  const cleanedParticipants = useMemo(() => participants.map((name) => name.trim()).filter(Boolean), [participants]);
   const currentSummary = useMemo(
     () => ({
       overview: `${scene.place}で、${currentTopic.text} という話題から会話が広がりました。`,
@@ -120,6 +123,22 @@ function App() {
     }
   };
 
+  const handleGuestLogin = async () => {
+    setGuestLoginLoading(true);
+    setLoginError("");
+    try {
+      const result = await apiGuestLogin();
+      const authUser: AuthUser = { token: result.token, email: "", name: result.name, isGuest: true };
+      setAuthToken(result.token);
+      setUser(authUser);
+      setScreen("home");
+    } catch (e) {
+      setLoginError(e instanceof Error ? e.message : "ゲストログインに失敗しました");
+    } finally {
+      setGuestLoginLoading(false);
+    }
+  };
+
   const handleLogout = async () => {
     await apiLogout();
     forceLogout();
@@ -161,7 +180,7 @@ function App() {
 
     setIsApiLoading(true);
     try {
-      const response = await requestAiResponse(conversationId, text);
+      const response = await requestAiResponse(conversationId, text, cleanedParticipants);
       setServerTopic({ label: "AIの返答", text: response });
       setTranscriptLog((current) => [...current, { role: "user", content: text }, { role: "ai", content: response }]);
       speak(response);
@@ -247,8 +266,6 @@ function App() {
     setRealSummary(null);
     setTranscriptLog([]);
 
-    const cleanedParticipants = participants.map((name) => name.trim()).filter(Boolean);
-
     try {
       const nextConversationId = await startConversation(scene, cleanedParticipants);
       setConversationId(nextConversationId);
@@ -271,7 +288,7 @@ function App() {
 
     setIsApiLoading(true);
     try {
-      const response = await requestAiResponse(conversationId, prompt);
+      const response = await requestAiResponse(conversationId, prompt, cleanedParticipants);
       setServerTopic({ label: "AIの応答", text: response });
       setTranscriptLog((current) => [...current, { role: "user", content: prompt }, { role: "ai", content: response }]);
       speak(response);
@@ -287,7 +304,7 @@ function App() {
     if (conversationId) {
       setIsApiLoading(true);
       try {
-        const result = await endConversation(conversationId, transcriptLog);
+        const result = await endConversation(conversationId, transcriptLog, cleanedParticipants);
         setRealSummary({
           overview: result.overview || "会話の要約を生成できませんでした。",
           hotTopics: result.hotTopics,
@@ -377,7 +394,7 @@ function App() {
       overview: summaryToShow.overview,
       hotTopics: summaryToShow.hotTopics,
       memorable: summaryToShow.memorable,
-      participants: participants.map((name) => name.trim()).filter(Boolean)
+      participants: cleanedParticipants
     };
     setHistories((current) => [nextHistory, ...current]);
     setSelectedHistoryId(nextHistory.id);
@@ -388,7 +405,15 @@ function App() {
     <main className="app-stage">
       <section className={`phone-shell ${screen === "home" || screen === "login" ? "home-shell" : ""}`}>
         <div className="phone-scroll">
-          {screen === "login" && <LoginScreen isLoading={loginLoading} errorMessage={loginError} onLogin={handleLogin} />}
+          {screen === "login" && (
+            <LoginScreen
+              isLoading={loginLoading}
+              errorMessage={loginError}
+              onLogin={handleLogin}
+              onGuestLogin={handleGuestLogin}
+              isGuestLoading={guestLoginLoading}
+            />
+          )}
           {screen === "home" && <HomeScreen onStart={() => setScreen("scene")} />}
           {screen === "scene" && (
             <SceneScreen
@@ -442,7 +467,9 @@ function App() {
             />
           )}
           {screen === "summary" && <SummaryScreen summary={summaryToShow} onSave={saveSummary} onHistory={() => setScreen("history")} onTalk={() => setScreen("talk")} />}
-          {screen === "history" && <HistoryScreen histories={histories} onDetail={openHistoryDetail} onDelete={removeHistory} onLogout={handleLogout} />}
+          {screen === "history" && (
+            <HistoryScreen histories={histories} onDetail={openHistoryDetail} onDelete={removeHistory} onLogout={handleLogout} isGuest={user?.isGuest} />
+          )}
           {screen === "detail" && selectedHistory && (
             <HistoryDetailScreen
               history={selectedHistory}

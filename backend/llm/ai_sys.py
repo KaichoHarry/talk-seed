@@ -55,17 +55,28 @@ def get_participants_memories(conversation_id):
 
 def generate_ai_response(conversation_id, current_text):
     """過去の記憶をベースに、GeminiでAIの応答メッセージを生成する"""
-    
+
     start_total = time.time()
-    
+
     # 1. DBからのデータ取得
     start_db = time.time()
     names, memories_prompt = get_participants_memories(conversation_id)
-    names_str = "、".join(names) if names else "ユーザー"
     end_db = time.time()
-    
+
     db_duration = end_db - start_db
     print(f"\n[⏱️ TIME LOG] 1. DBからの記憶取得にかかった時間: {db_duration:.4f} 秒")
+
+    return _generate_ai_response_core(names, memories_prompt, current_text, start_total)
+
+
+def generate_ai_response_stateless(participant_names, current_text):
+    """ゲスト用。DBを一切参照せず、フロントから渡された参加者名だけでAIの応答を生成する
+    (過去の記憶は無いので、その場の会話だけで応答する)。"""
+    return _generate_ai_response_core(participant_names, "", current_text, time.time())
+
+
+def _generate_ai_response_core(names, memories_prompt, current_text, start_total):
+    names_str = "、".join(names) if names else "ユーザー"
 
     # 2. システム指示の作成
     system_prompt = f"""
@@ -146,31 +157,23 @@ def _save_memories(cursor, user_id, names, memories):
     return saved
 
 
-def generate_conversation_summary(conversation_id, user_id, transcript):
-    """会話終了時に、フロントから渡された発話ログ(transcript)をもとにGeminiで要約と
-    人物記憶の抽出を行いDBへ保存する。会話全文はDBに保存しない（要約のみ保持）。
+def _summarize_transcript(names, transcript):
+    """発話ログ(transcript)をもとにGeminiで要約と人物記憶の抽出を行う(DBへの保存は行わない)。
 
     transcript: [{"role": "user"|"ai", "content": str}, ...]
+    戻り値: (overview, hot_topics, memorable_points, memories)
     """
-    names, _ = get_participants_memories(conversation_id)
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
     messages = [m for m in transcript if m.get("content")]
 
     if not messages:
-        overview = "この会話では発話の記録がありませんでした。"
-        hot_topics = ""
-        memorable_points = ""
-        memory_saved = 0
-    else:
-        transcript_text = "\n".join(
-            f"{'利用者' if m['role'] == 'user' else 'AI'}: {m['content']}" for m in messages
-        )
-        names_str = "、".join(names) if names else "利用者"
+        return "この会話では発話の記録がありませんでした。", "", "", []
 
-        prompt = f"""
+    transcript_text = "\n".join(
+        f"{'利用者' if m['role'] == 'user' else 'AI'}: {m['content']}" for m in messages
+    )
+    names_str = "、".join(names) if names else "利用者"
+
+    prompt = f"""
 以下は{names_str}さんたちとAIが行った会話のログです。この内容をもとに、以下のJSON形式で要約を出力してください。
 
 {{
@@ -188,30 +191,36 @@ def generate_conversation_summary(conversation_id, user_id, transcript):
 {transcript_text}
 """
 
-        try:
-            response = client.models.generate_content(
-                model='gemini-flash-lite-latest',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.4,
-                    max_output_tokens=500,
-                    response_mime_type="application/json"
-                )
+    try:
+        response = client.models.generate_content(
+            model='gemini-flash-lite-latest',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.4,
+                max_output_tokens=500,
+                response_mime_type="application/json"
             )
-            data = json.loads(response.text)
-            overview = data.get("overview", "")
-            hot_topics = data.get("hot_topics", "")
-            memorable_points = data.get("memorable_points", "")
-            memory_saved = _save_memories(cursor, user_id, names, data.get("memories", []))
-        except Exception as e:
-            print("\n=== 🚨 会話要約生成エラー 🚨 ===")
-            print(f"エラーの種類 (Type): {type(e)}")
-            print(f"エラー内容 (Message): {e}")
-            print("=================================\n")
-            overview = "要約の生成に失敗しました。もう一度お試しください。"
-            hot_topics = ""
-            memorable_points = ""
-            memory_saved = 0
+        )
+        data = json.loads(response.text)
+        return data.get("overview", ""), data.get("hot_topics", ""), data.get("memorable_points", ""), data.get("memories", [])
+    except Exception as e:
+        print("\n=== 🚨 会話要約生成エラー 🚨 ===")
+        print(f"エラーの種類 (Type): {type(e)}")
+        print(f"エラー内容 (Message): {e}")
+        print("=================================\n")
+        return "要約の生成に失敗しました。もう一度お試しください。", "", "", []
+
+
+def generate_conversation_summary(conversation_id, user_id, transcript):
+    """会話終了時に、フロントから渡された発話ログ(transcript)をもとに要約と人物記憶の抽出を
+    行いDBへ保存する。会話全文はDBに保存しない（要約のみ保持）。"""
+    names, _ = get_participants_memories(conversation_id)
+    overview, hot_topics, memorable_points, memories = _summarize_transcript(names, transcript)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    memory_saved = _save_memories(cursor, user_id, names, memories)
 
     cursor.execute("DELETE FROM CONVERSATION_SUMMARY WHERE conversation_id = ?", (conversation_id,))
     cursor.execute(
@@ -227,4 +236,16 @@ def generate_conversation_summary(conversation_id, user_id, transcript):
         "hot_topics": hot_topics,
         "memorable_points": memorable_points,
         "memory_updated": memory_saved > 0
+    }
+
+
+def generate_guest_summary(participant_names, transcript):
+    """ゲスト用。DBへは一切保存せず、要約だけをその場で生成して返す(記憶も保存しない)。"""
+    overview, hot_topics, memorable_points, _memories = _summarize_transcript(participant_names, transcript)
+
+    return {
+        "overview": overview,
+        "hot_topics": hot_topics,
+        "memorable_points": memorable_points,
+        "memory_updated": False
     }

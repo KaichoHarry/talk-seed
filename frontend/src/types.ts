@@ -42,4 +42,5 @@ export type AuthUser = {
   token: string;
   email: string;
   name: string;
+  isGuest?: boolean;
 };

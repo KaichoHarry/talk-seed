@@ -7,12 +7,14 @@ export function HistoryScreen({
   histories,
   onDetail,
   onDelete,
-  onLogout
+  onLogout,
+  isGuest
 }: {
   histories: ConversationHistory[];
   onDetail: (id: string) => void;
   onDelete: (id: string) => void;
   onLogout: () => void;
+  isGuest?: boolean;
 }) {
   return (
     <>
@@ -24,6 +26,7 @@ export function HistoryScreen({
           </button>
         }
       />
+      {isGuest && <p className="history-guest-note">ゲストモードのため、この会話は保存されません（画面を離れると消えます）。</p>}
       <section className="history-list">
         {histories.map((history) => (
           <article className="soft-card history-card" key={history.id}>

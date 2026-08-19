@@ -4,11 +4,15 @@ import mascot from "../assets/mascot.svg";
 export function LoginScreen({
   isLoading,
   errorMessage,
-  onLogin
+  onLogin,
+  onGuestLogin,
+  isGuestLoading
 }: {
   isLoading: boolean;
   errorMessage: string;
   onLogin: (email: string) => void;
+  onGuestLogin: () => void;
+  isGuestLoading: boolean;
 }) {
   const [email, setEmail] = useState("");
 
@@ -39,6 +43,10 @@ export function LoginScreen({
           {isLoading ? "確認中..." : "ログイン"}
         </button>
       </form>
+      <button className="button secondary" type="button" disabled={isGuestLoading} onClick={onGuestLogin}>
+        {isGuestLoading ? "準備中..." : "ゲストとして試す"}
+      </button>
+      <p className="login-guest-note">ゲストモードでは会話履歴・記憶はサーバーに保存されません。</p>
     </section>
   );
 }

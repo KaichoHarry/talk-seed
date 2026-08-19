@@ -213,6 +213,17 @@ button {
   text-align: center;
 }
 
+.login-hero > .button.secondary {
+  margin-top: 16px;
+}
+
+.login-guest-note {
+  margin: 8px 0 0;
+  color: #8a94a6;
+  font-size: 12px;
+  text-align: center;
+}
+
 .page-intro-note {
   margin: -4px 4px 12px;
   color: #506783;
@@ -653,6 +664,15 @@ button {
 .stack {
   display: grid;
   gap: 12px;
+}
+
+.history-guest-note {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fff7e6;
+  color: #8a6d1f;
+  font-size: 13px;
 }
 
 .history-list {

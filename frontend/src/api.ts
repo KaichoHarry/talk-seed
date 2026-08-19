@@ -87,6 +87,21 @@ export async function login(email: string): Promise<{ token: string; name: strin
   return data;
 }
 
+export async function guestLogin(): Promise<{ token: string; name: string }> {
+  const response = await fetch(`${API_BASE_URL}/auth/guest-login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" }
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new ApiError(response.status, data.error ?? "ゲストログインに失敗しました");
+  }
+
+  return data;
+}
+
 export async function logout(): Promise<void> {
   try {
     await requestJson("/auth/logout", { method: "POST" });
@@ -117,22 +132,23 @@ export async function updateConversationParticipants(id: string, participants: s
   return data.participants;
 }
 
-export async function requestAiResponse(conversationId: number, currentText: string) {
+export async function requestAiResponse(conversationId: number, currentText: string, participants: string[] = []) {
   const data = await requestJson<{ response: string }>("/conversation/respond", {
     method: "POST",
     body: JSON.stringify({
       conversation_id: conversationId,
-      current_text: currentText
+      current_text: currentText,
+      participants
     })
   });
 
   return data.response;
 }
 
-export async function endConversation(conversationId: number, transcript: TranscriptEntry[]) {
+export async function endConversation(conversationId: number, transcript: TranscriptEntry[], participants: string[] = []) {
   const data = await requestJson<BackendSummary>("/conversation/end", {
     method: "POST",
-    body: JSON.stringify({ conversation_id: conversationId, transcript })
+    body: JSON.stringify({ conversation_id: conversationId, transcript, participants })
   });
 
   return {
