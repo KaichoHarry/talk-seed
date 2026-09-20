@@ -241,18 +241,42 @@ python3 backend/database/init_db.py
 
 ## 使い方
 
-1. **ログイン画面**で、事前に登録されたメールアドレスを入力してログイン
+以下は実際に動作しているアプリの画面キャプチャです（スマートフォン幅で表示）。
+
+1. **ログイン画面**で、事前に登録されたメールアドレスを入力してログイン（登録なしで試せる「ゲストとして試す」もある）
+
+   <img src="./docs/screenshots/01_login.jpg" width="320" alt="ログイン画面">
+
 2. **トップ画面**で「はじめる」を押す
+
+   <img src="./docs/screenshots/02_home.jpg" width="320" alt="トップ画面">
+
 3. **シーン選択画面**で場所・関係性・気分を選び、「一緒にいる相手の名前」に分かる範囲で名前を入力して「次へ」
    * 名前が分からない場合は空欄のままでもよく、後から履歴画面で編集できる
+
+   <img src="./docs/screenshots/03_scene.jpg" width="320" alt="シーン選択画面">
+
 4. **音声設定画面**でAIの声（女性／男性）・音量・話速を選び、「保存して会話をはじめる」
+
+   <img src="./docs/screenshots/04_voice.jpg" width="320" alt="音声設定画面">
+
 5. **会話サポート画面**
    * AIが最初の話題を音声付きで提示する
    * 中央のマイクボタンを押して発話し、もう一度押すと録音が止まり、音声認識 → AI応答生成 → 音声読み上げが自動で行われる
    * 「もう一度読む」「深掘り質問」「次の話題へ」でもAIとやり取りできる
    * 「会話を記録する」を押すと記録中の表示（REC・タイマー）になり、「記録を終了する」でAIが会話全体を要約する
+
+   <img src="./docs/screenshots/05_talk.jpg" width="320" alt="会話サポート画面（通常時）">
+   <img src="./docs/screenshots/06_talk_recording.jpg" width="320" alt="会話サポート画面（記録中）">
+
 6. **会話まとめ画面**でAIが生成した要約・盛り上がった話題・印象的な内容を確認し、「保存する」で履歴に残す
+
+   <img src="./docs/screenshots/07_summary.jpg" width="320" alt="会話まとめ画面">
+
 7. **履歴画面**で過去の会話を一覧・詳細確認・削除でき、詳細画面では参加者名の追加・修正ができる。右上の「ログアウト」でログアウトできる
+
+   <img src="./docs/screenshots/08_history.jpg" width="320" alt="履歴一覧画面">
+   <img src="./docs/screenshots/09_history_detail.jpg" width="320" alt="履歴詳細画面">
 
 ---
 
