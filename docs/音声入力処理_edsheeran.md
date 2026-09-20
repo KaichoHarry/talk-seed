@@ -84,11 +84,13 @@
 
 取得した音声ファイルをテキストへ変換する。
 
-音声認識エンジンには Whisper (`openai-whisper`, baseモデル) を採用し、サーバーサイド(`POST /voice/transcribe`)で実行する。
+音声認識エンジンには Whisper (`openai-whisper`, baseモデル) を採用し、サーバーサイド(`POST /voice/transcribe`)で実行する。モデルは初回リクエスト時に読み込み、以降はプロセス内に保持して使い回す（`backend/voice/service.py`）。
+
+`POST /voice/transcribe`は他のAPIと同様`Authorization: Bearer <token>`が必須で、ゲストトークンでも利用できる。
 
 #### 入力
 
-* 音声ファイル(multipart/form-data)
+* 音声ファイル(multipart/form-data、フィールド名`audio`)
 
 #### 出力
 
